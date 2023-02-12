@@ -1,9 +1,11 @@
+import re
 import cv2 as cv
 import numpy as np
 from matplotlib import pyplot as plt
 
 import os 
 import sys
+from hand import *
 
 # tuning handles
 
@@ -23,6 +25,7 @@ LIBRARY_PATH_OUT = os.path.join(os.getcwd(), 'library\out')
 
 # user flags
 DEBUG = False
+STATS = False
 
 def main():
     # if the program is run with --debug flag, set the DEBUG flag to true, it doesn't matter if the flag is in any position
@@ -32,42 +35,108 @@ def main():
         global DEBUG
         DEBUG = True
     
+    if '--stats':
+        print("Gathering calibration statistics")
+        global STATS
+        STATS = True
     # walk through the in folder and run the getHand function on each image
     for root, _, files in os.walk(LIBRARY_PATH_IN):
         for file in files:
             if file.endswith('.jpg'):
-                if DEBUG:
-                    print("Processing file: " + file)
-                getHand(os.path.join(root, file))
+                # if DEBUG:
+                    # print("Processing file: " + file)
+                analyzeHand(os.path.join(root, file))
     
     
 # this function outputs a dictionary containing all the information about the hand
-def getHand(path) -> dict: 
-    # get the image from the supplied path
-    img = cv.imread(path)
-    # scale the image proportionally until it is less than 1000 pixels on one side
-    resize = 1000 / max(img.shape[0], img.shape[1])
-    resized = cv.resize(img, (0,0), fx=resize, fy=resize)
+def analyzeHand(path) -> Hand:
+    # initialize the hand object
+    hand = Hand(path)
     
-    # get the contour and hull from the color image
-    hand_contour, hull = hull_from_color(resized)
+    if DEBUG:
+        print(hand)
+    
+    # get the contour and convex hull of the hand
+    hull, hand_contour = hull_from_color(hand.img)
     
     # get the convexity defects from the contour and hull
-    
+    defects = cv.convexityDefects(hand_contour, hull)
+    data = {
+        "defectTop4Avg": None,
+        "eccentricity": None,
+        "contourCenter": None,
+        "hullCenter": None,
+    }
     # if debug, show the original image with the contour and defects drawn on it
+    if DEBUG:
+        image_with_defects = hand.img.copy()
+        # strip to the 4 largest defects
+        defects = defects[np.argsort(defects[:,0,3])][::-1][:4]
+        # draw each defect as a triangle between the start, end, and far points
+        for i in range(defects.shape[0]):
+            s,e,f,d = defects[i,0]
+            start = tuple(hand_contour[s][0])
+            end = tuple(hand_contour[e][0])
+            far = tuple(hand_contour[f][0])
+            cv.line(image_with_defects,start,end,[0, 0, 255],2)
+            cv.line(image_with_defects,start,far,[0, 0, 255],2)
+            cv.line(image_with_defects,end,far,[0, 0, 255],2)
+        # fit a line to the contour and draw it longer than the contour to show the centerline
+        [vx,vy,x,y] = cv.fitLine(hand_contour, cv.DIST_L2,0,0.01,0.01)
+        lefty = int((-x*vy/vx) + y)
+        righty = int(((image_with_defects.shape[1]-x)*vy/vx)+y)
+        cv.line(image_with_defects,(image_with_defects.shape[1]-1,righty),(0,lefty),(0,255,0),2)
+        
+        # draw the geometric center of the contour in a thick blue circle
+        M = cv.moments(hand_contour)
+        cx = int(M['m10']/M['m00'])
+        cy = int(M['m01']/M['m00'])
+        cv.circle(image_with_defects, (cx, cy), 30, (255, 0, 0), -1)
+        
+        # select the hullth points of the contour and draw them in a thick green circle to make other functions work
+        contour_of_hull = hand_contour[hull[:,0]]
 
-    # if the largest 4 defects are on average longer than DEFECT_LENGTH_THRESHOLD, it is a splayed hand
-    # otherwise, it is a non-splay hand
-    # if the non-splay hand is more oval than OVAL_THRESHOLD, it is a palm, otherwise it is a fist
-    
-    # get the centerline of the hand from the contour, then offset it by CENTERLINE_OFFSET
-    
-    
-    return dict()
+        # draw the geometric center of the convex hull in a thick yellow circle
+        M = cv.moments(contour_of_hull)
+        cx = int(M['m10']/M['m00'])
+        cy = int(M['m01']/M['m00'])
+        cv.circle(image_with_defects, (cx, cy), 30, (0, 255, 255), -1)
+        
+        plt.imshow(cv.cvtColor(image_with_defects, cv.COLOR_BGR2RGB))
+        
+        # label the image with the name of the file
+        plt.title("Analysis")
+        # annotate each color with its meaning and the color of the circle at the bottom of the image
+        plt.annotate("Red: Concave Defects", (0, 0), (0, -20), xycoords='axes fraction', textcoords='offset points', va='top')
+        plt.annotate("Green: Centerline", (0, 0), (0, -40), xycoords='axes fraction', textcoords='offset points', va='top')
+        plt.annotate("Blue: Contour Center", (0, 0), (0, -60), xycoords='axes fraction', textcoords='offset points', va='top')
+        plt.annotate("Yellow: Hull Center", (0, 0), (0, -80), xycoords='axes fraction', textcoords='offset points', va='top')
+        plt.show()
 
+    # collect the reduced data from the hand. To set our tuning handles, we will need to collect the data from a large number of images
+    # the STAT flag will tell the program to show histograms of the data instead of making a decision
+
+    # splayed hands have 4 large convexity defects, non-splayed hands do not, this can be used to distinguish between the two
+    data['defectTop4Avg'] = defects[:,0,3].mean()
+    
+    # palms and fists have no large convexity defects but they do have different shapes, this can be used to distinguish between the two
+    # eccentricity measures ovalness, so a high eccentricity means the hand is more oval, a low eccentricity means the hand is more circular
+    # roughly, circle = first and oval = palm
+    ellipse = cv.fitEllipse(contour_of_hull)
+    data['eccentricity'] = ellipse[1][0] / ellipse[1][1]
+    
+    # get the geometric center of the contour and the convex hull relative to the image in pixels
+    M = cv.moments(hand_contour)
+    data['contourCenter'] = (int(M['m10']/M['m00']), int(M['m01']/M['m00']))
+    M = cv.moments(contour_of_hull)
+    data['hullCenter'] = (int(M['m10']/M['m00']), int(M['m01']/M['m00']))
+    
+    # return the hand with the data filled in
+    hand.data = data
+    return hand
 
 # given an image, this function returns a binary image of skin and non-skin pixels
-def hull_from_color(image: cv.Mat) -> np.ndarray:
+def hull_from_color(image: cv.Mat) -> tuple:
 
     # pull out the red channel
     red_channel = image[:,:,2]
@@ -96,11 +165,14 @@ def hull_from_color(image: cv.Mat) -> np.ndarray:
 
     # if debug, show the original, binary, and hull images with the contour drawn on the original
     if DEBUG:
-        _, axs = plt.subplots(1, 3)
+         
+        _, axs = plt.subplots(1, 4)
         
-        # draw the contour on the original image
+        # draw the contour on the original image, titled "original"
+        axs[0].set_title("Original")
         axs[0].imshow(cv.drawContours(cv.cvtColor(image, cv.COLOR_BGR2RGB), contours, -1, (0,255,0), 5))
         # show the binary image
+        axs[1].set_title("Binary")
         axs[1].imshow(thresholded_image, cmap='gray')
         
         # connect the dots on the hull and draw it on a copy of the image
@@ -109,11 +181,10 @@ def hull_from_color(image: cv.Mat) -> np.ndarray:
         
         for i in range(len(hull)):
             cv.line(hull_image, tuple(hand_contour[hull[i][0]][0]), tuple(hand_contour[hull[(i+1) % len(hull)][0]][0]), (0,255,0), 5)
+        axs[2].set_title("Hull")
         axs[2].imshow(cv.cvtColor(hull_image, cv.COLOR_BGR2RGB))
-        plt.show()
-    
     # return a dict of "hull" and "contour"
-    return dict(hull=hull, contour=hand_contour)
+    return hull, hand_contour
 
 if __name__ == '__main__':
     main()
