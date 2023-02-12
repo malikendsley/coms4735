@@ -259,6 +259,7 @@ def analyze_hand(path) -> Hand:
 def decide_pose(hand: Hand) -> str:
     # anomalies have both a high eccentricity and a high average of the top 4 convexity defects from the statistical analysis
     # use the global tuning handles as the thresholds for the data
+    # TODO: anomalies are likely to pick a strange hue of red to threshold at, maybe that's a good way to detect them?
     
     if hand.data['eccentricity'] > DEFECT_LENGTH_THRESHOLD and hand.data['defectTop4Avg'] > ECCENTRICITY_THRESHOLD:
         return "anomaly"
