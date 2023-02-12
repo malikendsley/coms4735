@@ -1,4 +1,3 @@
-import re
 import cv2 as cv
 import numpy as np
 from matplotlib import pyplot as plt
@@ -7,32 +6,38 @@ import os
 import sys
 from hand import *
 
-# tuning handles
+# tuning handles, these are derived by measuring the images in library using the stat flag
 
 # if a contour's largest 4 defects are on average longer than this, it is a splayed hand
-# based on STAT's results, this should be about 5289.70
 DEFECT_LENGTH_THRESHOLD = 5289.70
 
 # if a non-splay hand's overall eccentricity is less than this, it is a fist, otherwise it is a palm
-ECCENTRICITY_THRESHOLD = 0.64
+ECCENTRICITY_THRESHOLD = 0.36
 
-# the geometric center of the outline of a hand is not the center of the hand, this corrects for that
-CENTERLINE_OFFSET = None
+# these are breakpoint coordinates for the vertical and horizontal position of the hand
+# the origin is the top left corner of the image
 
-# constants
+LEFT_THRESHOLD = 358
+RIGHT_THRESHOLD = 638
+
+TOP_THRESHOLD = 403
+BOTTOM_THRESHOLD = 621
+
+# constants and flags
 
 LIBRARY_PATH_IN = os.path.join(os.getcwd(), 'library\in')
 LIBRARY_PATH_OUT = os.path.join(os.getcwd(), 'library\out')
-
-# user flags
+# define some file level flags, VERBOSE, STAT, and SAVE
 VERBOSE = False
 STAT = False
-# TODO: add a flag to save the images
 SAVE = False
 
+
+
+
 def main():
-    # if the program is run with --debug flag, set the DEBUG flag to true, it doesn't matter if the flag is in any position
     
+    # detect debug and stat flags, adjust behavior accordingly
     if '--verbose' in sys.argv:
         print("Running in debug mode")
         global VERBOSE
@@ -42,8 +47,13 @@ def main():
         print("Gathering calibration statistics")
         global STAT
         STAT = True
+        
+    if '--save' in sys.argv:
+        print("Saving images")
+        global SAVE
+        SAVE = True
 
-    # set up histogram variables if stats is true
+    # variables for stat mode, unused otherwise
     if STAT:
         defect_lengths_anomaly = []
         defect_lengths_splay = []
@@ -55,15 +65,40 @@ def main():
         eccentricities_fist = []
         eccentricities_palm = []
     
+        hpos_lefts = []
+        hpos_centers = []
+        hpos_rights = []
+        
+        vpos_tops = []
+        vpos_centers = []
+        vpos_bottoms = []
+        
+
+    hands = []
+    
     # walk through and analyze all the images in the library
     for root, _, files in os.walk(LIBRARY_PATH_IN):
         for file in files:
             if file.endswith('.jpg'):
-                # if DEBUG:
-                    # print("Processing file: " + file)
-                hand = analyze_hand(os.path.join(root, file))
+                print("=========================================\n")
+                # generate a preliminary hand object from the supplied filepath
+                hand = reduce_to_features(os.path.join(root, file))
+                # classify the hand
+                decide_pose(hand)
+                decide_location(hand)
+                
+                print(hand)
+                
+                if VERBOSE:
+                    display_hand(hand)
+                    print(hand.stat())
+                
+                hands.append(hand)
+                
                 # if stat, record the stats
                 if STAT:
+                    
+                    # classify by pose
                     if hand.hand_type == HandType.ANOMALY:
                         defect_lengths_anomaly.append(hand.data['defectTop4Avg'])
                         eccentricities_anomaly.append(hand.data['eccentricity'])
@@ -76,10 +111,27 @@ def main():
                     elif hand.hand_type == HandType.PALM:
                         defect_lengths_palm.append(hand.data['defectTop4Avg'])
                         eccentricities_palm.append(hand.data['eccentricity'])
-                else:
-                    pass
+                    
+                    # group by vertical position
+                    if hand.vpos == HandVPos.TOP:
+                        vpos_tops.append(hand.data['center'][1])
+                    elif hand.vpos == HandVPos.CENTER:
+                        vpos_centers.append(hand.data['center'][1])
+                    elif hand.vpos == HandVPos.BOTTOM:
+                        vpos_bottoms.append(hand.data['center'][1])
+                    
+                    # group by horizontal position
+                    if hand.hpos == HandHPos.LEFT:
+                        hpos_lefts.append(hand.data['center'][0])
+                    elif hand.hpos == HandHPos.CENTER:  
+                        hpos_centers.append(hand.data['center'][0])
+                    elif hand.hpos == HandHPos.RIGHT:
+                        hpos_rights.append(hand.data['center'][0])
+                        
+                print("=========================================\n")
     #output the stats
     if STAT:
+        # im sure you can loop or otherwise clean this up but its a one off solution and clarity is more important
         avg_defect_lengths_anomaly = sum(defect_lengths_anomaly) / len(defect_lengths_anomaly)
         avg_defect_lengths_splay = sum(defect_lengths_splay) / len(defect_lengths_splay)
         avg_defect_lengths_fist = sum(defect_lengths_fist) / len(defect_lengths_fist)
@@ -90,38 +142,97 @@ def main():
         avg_eccentricities_fist = sum(eccentricities_fist) / len(eccentricities_fist)
         avg_eccentricities_palm = sum(eccentricities_palm) / len(eccentricities_palm)
         
+        
+        avg_hpos_left = sum(hpos_lefts) / len(hpos_lefts)
+        avg_hpos_center = sum(hpos_centers) / len(hpos_centers)
+        avg_hpos_right = sum(hpos_rights) / len(hpos_rights)
+        
+        avg_vpos_top = sum(vpos_tops) / len(vpos_tops)
+        avg_vpos_center = sum(vpos_centers) / len(vpos_centers)
+        avg_vpos_bottom = sum(vpos_bottoms) / len(vpos_bottoms)
+        
         # pretty print the stats in a table using f strings, round to 2 decimal places
         print('=' * 65)
-        print(f'{"Hand Type":<15}{"Average Defect Length":<25}{"Average Eccentricity":<25}')
-        print(f'{"Anomaly":<15}{avg_defect_lengths_anomaly:<25.2f}{avg_eccentricities_anomaly:<25.2f}')
-        print(f'{"Splay":<15}{avg_defect_lengths_splay:<25.2f}{avg_eccentricities_splay:<25.2f}')
-        print(f'{"Fist":<15}{avg_defect_lengths_fist:<25.2f}{avg_eccentricities_fist:<25.2f}')
-        print(f'{"Palm":<15}{avg_defect_lengths_palm:<25.2f}{avg_eccentricities_palm:<25.2f}')
+        print(f'{"Hand Type":<25}{"Average Defect Length":<25}{"Average Eccentricity":<25}')
+        print(f'{"Anomaly":<25}{avg_defect_lengths_anomaly:<25.2f}{avg_eccentricities_anomaly:<25.2f}')
+        print(f'{"Splay":<25}{avg_defect_lengths_splay:<25.2f}{avg_eccentricities_splay:<25.2f}')
+        print(f'{"Fist":<25}{avg_defect_lengths_fist:<25.2f}{avg_eccentricities_fist:<25.2f}')
+        print(f'{"Palm":<25}{avg_defect_lengths_palm:<25.2f}{avg_eccentricities_palm:<25.2f}')
         print('=' * 65 + '\n')
-        # average the fist and palm defect lengths together, then get their average with the splay defect length to get the threshold
-        print(f'{"Suggestions":<15}{"DEFECT_LENGTH_THRESHOLD":<25}{"OVAL_THRESHOLD":<25}')
-        print(f'{"":<15}{(avg_defect_lengths_splay + (avg_defect_lengths_fist + avg_defect_lengths_palm) / 2) / 2:<25.2f}{(avg_eccentricities_fist + avg_eccentricities_palm) / 2:<25.2f}')
+
+        # do something similar for the horizontal and vertical positions
+        print(f'{"Hand Position":<25}{"Average X":<25}{"Average Y":<25}')
+        print(f'{"Left":<25}{avg_hpos_left:<25.2f}{"--":<25}')
+        print(f'{"Center":<25}{avg_hpos_center:<25.2f}{"--":<25}')
+        print(f'{"Right":<25}{avg_hpos_right:<25.2f}{"--":<25}')
+        print(f'{"Top":<25}{"--":<25}{avg_vpos_top:<25.2f}')
+        print(f'{"Center":<25}{"--":<25}{avg_vpos_center:<25.2f}')
+        print(f'{"Bottom":<25}{"--":<25}{avg_vpos_bottom:<25.2f}')
+        print('=' * 65 + '\n')
         
-        # graph the value for each hand type, 4 bars on the same graph
-        # show both graphs at once but not on top of each other with subplots
-        fig, (ax1, ax2) = plt.subplots(1, 2)
+        suggested_defect_length_threshold = (avg_defect_lengths_splay + (avg_defect_lengths_fist + avg_defect_lengths_palm) / 2) / 2
+        suggested_eccentricity_threshold = (avg_eccentricities_fist + avg_eccentricities_palm) / 2
+        suggested_left_threshold = round((avg_hpos_left + avg_hpos_center) / 2)
+        suggested_right_threshold = round((avg_hpos_right + avg_hpos_center) / 2)
+        suggested_top_threshold = round((avg_vpos_top + avg_vpos_center) / 2)
+        suggested_bottom_threshold = round((avg_vpos_bottom + avg_vpos_center) / 2)
+        
+        # average the fist and palm defect lengths together, then get their average with the splay defect length to get the threshold
+        print(f'{"Pose Suggestions":<25}{"DEFECT_LENGTH_THRESHOLD":<25}{"OVAL_THRESHOLD":<25}')
+        print(f'{"":<25}{suggested_defect_length_threshold:<25.2f}{suggested_eccentricity_threshold:<25.2f}')
+        print( '=' * 65 + '\n')
+        #average together left and center hpos to get the left threshold, and center and right to get the right threshold
+        print(f'{"Horizontal Suggestions":<25}{"LEFT THRESHOLD":<25}{"RIGHT THRESHOLD":<25}')
+        print(f'{"":<25}{suggested_left_threshold:<25.2f}{suggested_right_threshold:<25.2f}')
+        print( '=' * 65 + '\n')
+        #average together top and center vpos to get the top threshold, and center and bottom to get the bottom threshold
+        print(f'{"Vertical Suggestions":<25}{"TOP THRESHOLD":<25}{"BOTTOM THRESHOLD":<25}')
+        print(f'{"":<25}{suggested_top_threshold:<25.2f}{suggested_bottom_threshold:<25.2f}')
+
+        # graph the defect lengths, eccentricities, and hand positions by axis
+        # draw each threshold on the graph, only draw it at the necessary width between the two bars it is thresholding
+        # space them out some
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2)
+        fig.tight_layout(pad=3.0)
         fig.suptitle('Calibration Statistics')
         ax1.set_title('Defect Lengths')
         ax1.set_ylabel('Average Defect Length')
         ax1.set_xlabel('Hand Type')
         ax1.bar(['Anomaly', 'Splay', 'Fist', 'Palm'], [avg_defect_lengths_anomaly, avg_defect_lengths_splay, avg_defect_lengths_fist, avg_defect_lengths_palm])
-        
+        ax1.hlines(y=suggested_defect_length_threshold, xmin=0.5, xmax=3.5, color='r', linestyle='-')
+    
         ax2.set_title('Eccentricities')
         ax2.set_ylabel('Average Eccentricity')
         ax2.set_xlabel('Hand Type')
         ax2.bar(['Anomaly', 'Splay', 'Fist', 'Palm'], [avg_eccentricities_anomaly, avg_eccentricities_splay, avg_eccentricities_fist, avg_eccentricities_palm])
-    
+        ax2.hlines(y=suggested_eccentricity_threshold, xmin=1.5, xmax=3.5, color='r', linestyle='-')
+
+        ax3.set_title('Vertical Position')
+        ax3.set_ylabel('Average Y Position')
+        ax3.set_xlabel('Vertical Position')
+        ax3.bar(['Top', 'Center', 'Bottom'], [avg_vpos_top, avg_vpos_center, avg_vpos_bottom])
+        ax3.hlines(y=suggested_top_threshold, xmin=-.5, xmax=1.5, color='r', linestyle='-')
+        ax3.hlines(y=suggested_bottom_threshold, xmin=0.5, xmax=2.5, color='r', linestyle='-')
+        
+        
+        ax4.set_title('Horizontal Position')
+        ax4.set_ylabel('Average X Position')
+        ax4.set_xlabel('Horizontal Position')
+        ax4.bar(['Left', 'Center', 'Right'], [avg_hpos_left, avg_hpos_center, avg_hpos_right])
+        ax4.hlines(y=suggested_left_threshold, xmin=-0.5, xmax=1.5, color='r', linestyle='-')
+        ax4.hlines(y=suggested_right_threshold, xmin=0.5, xmax=2.5, color='r', linestyle='-')
+        
         plt.show()
         # stats mode only, don't run the program
+        
+        # if saving the calibration data, save it to a file
+        if SAVE:
+            print("I should save the calibration data to a file")
+            #TODO save the calibration data to a file
         return
 
-# given an image, this function returns a binary image of skin and non-skin pixels
-def hull_from_color(image: cv.Mat) -> tuple:
+# this function is the first phase of reduction, it generates contours and binary images
+def reduce_to_binary(image: cv.Mat) -> tuple:
 
     # pull out the red channel
     red_channel = image[:,:,2]
@@ -132,155 +243,194 @@ def hull_from_color(image: cv.Mat) -> tuple:
     #otsu thresholding to get a binary image
     _, thresholded_image = cv.threshold(blurred, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU)
     
-    #remove some noise by eroding then dilating
+    #remove some noise through morphological operations
     kernel = np.ones((15,15), np.uint8)
-    thresholded_image = cv.erode(thresholded_image, kernel, iterations=1)
-    thresholded_image = cv.dilate(thresholded_image, kernel, iterations=1)
+    thresholded_image = cv.morphologyEx(thresholded_image, cv.MORPH_OPEN, kernel)
     
-    #fill in gaps by dilating then eroding
-    thresholded_image = cv.dilate(thresholded_image, kernel, iterations=1)
-    thresholded_image = cv.erode(thresholded_image, kernel, iterations=1)
+    #fill in gaps through morphological operations
+    thresholded_image = cv.morphologyEx(thresholded_image, cv.MORPH_CLOSE, kernel)
+    
+    # update the binary image in the hand object
     
     #get the largest contour and remove the rest, final denoising step
-    contours, hierarchy = cv.findContours(thresholded_image, cv.RETR_TREE, cv.CHAIN_APPROX_NONE)
+    contours, _ = cv.findContours(thresholded_image, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
     hand_contour = max(contours, key=lambda x: cv.contourArea(x))
 
     # get contour indices of the convex hull
     hull = cv.convexHull(hand_contour, returnPoints=False)
 
-    # if debug, show the original, binary, and hull images with the contour drawn on the original
-    if VERBOSE:
-         
-        _, axs = plt.subplots(1, 4)
-        
-        # draw the contour on the original image, titled "original"
-        axs[0].set_title("Original")
-        axs[0].imshow(cv.drawContours(cv.cvtColor(image, cv.COLOR_BGR2RGB), contours, -1, (0,255,0), 5))
-        # show the binary image
-        axs[1].set_title("Binary")
-        axs[1].imshow(thresholded_image, cmap='gray')
-        
-        # connect the dots on the hull and draw it on a copy of the image
-        # use modulus to wrap around to the first point
-        hull_image = image.copy()
-        
-        for i in range(len(hull)):
-            cv.line(hull_image, tuple(hand_contour[hull[i][0]][0]), tuple(hand_contour[hull[(i+1) % len(hull)][0]][0]), (0,255,0), 5)
-        axs[2].set_title("Hull")
-        axs[2].imshow(cv.cvtColor(hull_image, cv.COLOR_BGR2RGB))
     # return a dict of "hull" and "contour"
-    return hull, hand_contour
+    return hull, contours, hand_contour, thresholded_image
     
-# this function outputs a dictionary containing all the information about the hand
-def analyze_hand(path) -> Hand:
+# this function uses the binary image to get the a handful of features that will be used to classify the hand
+def reduce_to_features(path) -> Hand:
+    print("Analyzing hand...")
     # initialize the hand object
     hand = Hand(path)
+
+    # reduce the image and update the hand object
+    hand.data["hull"], hand.data["fullContour"], hand.data["handContour"], hand.data["binary"] = reduce_to_binary(hand.img)
     
-    if VERBOSE:
-        print(hand)
+    # select the hullth points of the contour to make other functions work and set them aside
+    contour_of_hull = hand.data["handContour"][hand.data["hull"][:,0]]
     
-    # get the contour and convex hull of the hand
-    hull, hand_contour = hull_from_color(hand.img)
-    # select the hullth points of the contour and draw them in a thick green circle to make other functions work
-    contour_of_hull = hand_contour[hull[:,0]]
     # get the convexity defects from the contour and hull
-    defects = cv.convexityDefects(hand_contour, hull)
-    data = {
-        "defectTop4Avg": None,
-        "eccentricity": None,
-        "contourCenter": None,
-        "hullCenter": None,
-    }
-    # if debug, show the original image with the contour and defects drawn on it
-    if VERBOSE:
-        image_with_defects = hand.img.copy()
-        # strip to the 4 largest defects
-        defects = defects[np.argsort(defects[:,0,3])][::-1][:4]
-        # draw each defect as a triangle between the start, end, and far points
-        for i in range(defects.shape[0]):
-            s,e,f,d = defects[i,0]
-            start = tuple(hand_contour[s][0])
-            end = tuple(hand_contour[e][0])
-            far = tuple(hand_contour[f][0])
-            cv.line(image_with_defects,start,end,[0, 0, 255],2)
-            cv.line(image_with_defects,start,far,[0, 0, 255],2)
-            cv.line(image_with_defects,end,far,[0, 0, 255],2)
-        # fit a line to the contour and draw it longer than the contour to show the centerline
-        [vx,vy,x,y] = cv.fitLine(hand_contour, cv.DIST_L2,0,0.01,0.01)
-        lefty = int((-x*vy/vx) + y)
-        righty = int(((image_with_defects.shape[1]-x)*vy/vx)+y)
-        cv.line(image_with_defects,(image_with_defects.shape[1]-1,righty),(0,lefty),(0,255,0),2)
-        
-        # draw the geometric center of the contour in a thick blue circle
-        M = cv.moments(hand_contour)
-        cx = int(M['m10']/M['m00'])
-        cy = int(M['m01']/M['m00'])
-        cv.circle(image_with_defects, (cx, cy), 30, (255, 0, 0), -1)
-
-        # draw the geometric center of the convex hull in a thick yellow circle
-        M = cv.moments(contour_of_hull)
-        cx = int(M['m10']/M['m00'])
-        cy = int(M['m01']/M['m00'])
-        cv.circle(image_with_defects, (cx, cy), 30, (0, 255, 255), -1)
-        
-        plt.imshow(cv.cvtColor(image_with_defects, cv.COLOR_BGR2RGB))
-        
-        # label the image with the name of the file
-        plt.title("Analysis")
-        # annotate each color with its meaning and the color of the circle at the bottom of the image
-        plt.annotate("Red: Concave Defects", (0, 0), (0, -20), xycoords='axes fraction', textcoords='offset points', va='top')
-        plt.annotate("Green: Centerline", (0, 0), (0, -40), xycoords='axes fraction', textcoords='offset points', va='top')
-        plt.annotate("Blue: Contour Center", (0, 0), (0, -60), xycoords='axes fraction', textcoords='offset points', va='top')
-        plt.annotate("Yellow: Hull Center", (0, 0), (0, -80), xycoords='axes fraction', textcoords='offset points', va='top')
-        plt.show()
-
-    # collect the reduced data from the hand. To set our tuning handles, we will need to collect the data from a large number of images
-    # the STAT flag will tell the program to show histograms of the data instead of making a decision
+    defects = cv.convexityDefects(hand.data["handContour"], hand.data["hull"])
 
     # splayed hands have 4 large convexity defects, non-splayed hands do not, this can be used to distinguish between the two
-    data['defectTop4Avg'] = defects[:,0,3].mean()
+    hand.data['defectTop4Avg'] = defects[:,0,3].mean()
     
-    # palms and fists have no large convexity defects but they do have different shapes, this can be used to distinguish between the two
-    # eccentricity measures ovalness, so a high eccentricity means the hand is more oval, a low eccentricity means the hand is more circular
-    # roughly, circle = first and oval = palm
     ellipse = cv.fitEllipse(contour_of_hull)
-    data['eccentricity'] = ellipse[1][0] / ellipse[1][1]
     
-    # get the geometric center of the contour and the convex hull relative to the image in pixels
-    M = cv.moments(hand_contour)
-    data['contourCenter'] = (int(M['m10']/M['m00']), int(M['m01']/M['m00']))
+    # get the eccentricity of the contour
+    # when calculating it this way, 0 is a line, 1 is a circle, and 0.5 is an ellipse
+    hand.data['eccentricity'] = 1 - (ellipse[1][0] / ellipse[1][1])
+
+    # store the geometric center of the hull in pixels
     M = cv.moments(contour_of_hull)
-    data['hullCenter'] = (int(M['m10']/M['m00']), int(M['m01']/M['m00']))
+    hand.data['center'] = (int(M['m10']/M['m00']), int(M['m01']/M['m00']))
     
     # return the hand with the data filled in
-    hand.data = data
     return hand
 
+# this function shows several images of the hand in different stages of processing
+def display_hand(hand):
+    _, axs = plt.subplots(1, 4)
+        
+    # draw the contour on the original image, titled "original"
+    axs[0].set_title("Original")
+    axs[0].imshow(cv.drawContours(cv.cvtColor(hand.img, cv.COLOR_BGR2RGB), hand.data['fullContour'], -1, (0,255,0), 5))
+    # show the binary image
+    axs[1].set_title("Binary")
+    axs[1].imshow(hand.data['binary'], cmap='gray')
+    
+    # connect the dots on the hull and draw it on a copy of the image
+    # use modulus to wrap around to the first point
+    hull_image = hand.img.copy()
+    
+    for i in range(len(hand.data['hull'])):
+        cv.line(hull_image, tuple(hand.data["handContour"][hand.data['hull'][i][0]][0]), tuple(hand.data["handContour"][hand.data['hull'][(i+1) % len(hand.data['hull'])][0]][0]), (0,255,0), 5)
+    axs[2].set_title("Hull")
+    axs[2].imshow(cv.cvtColor(hull_image, cv.COLOR_BGR2RGB))
+    
+    image_with_defects = hand.img.copy()
+    contour_of_hull = hand.data["handContour"][hand.data['hull'][:,0]]
+    # strip to the 4 largest defects
+    defects = cv.convexityDefects(hand.data["handContour"], hand.data["hull"])
+    defects = defects[np.argsort(defects[:,0,3])][::-1][:4]
+    # draw each defect as a triangle between the start, end, and far points
+    for i in range(defects.shape[0]):
+        s,e,f,d = defects[i,0]
+        start = tuple(hand.data["handContour"][s][0])
+        end = tuple(hand.data["handContour"][e][0])
+        far = tuple(hand.data["handContour"][f][0])
+        cv.line(image_with_defects,start,end,[0, 0, 255],2)
+        cv.line(image_with_defects,start,far,[0, 0, 255],2)
+        cv.line(image_with_defects,end,far,[0, 0, 255],2)
+    # fit a line to the contour and draw it longer than the contour to show the centerline
+    [vx,vy,x,y] = cv.fitLine(hand.data["handContour"], cv.DIST_L2,0,0.01,0.01)
+    lefty = int((-x*vy/vx) + y)
+    righty = int(((image_with_defects.shape[1]-x)*vy/vx)+y)
+    cv.line(image_with_defects,(image_with_defects.shape[1]-1,righty),(0,lefty),(0,255,0),2)
+
+    # draw the geometric center of the convex hull in a thick yellow circle
+    cx = hand.data['center'][0]
+    cy = hand.data['center'][1]
+    cv.circle(image_with_defects, (cx, cy), 5, (0, 255, 255), -1)
+    
+    # show the fitted ellipse
+    ellipse = cv.fitEllipse(contour_of_hull)
+    cv.ellipse(image_with_defects, ellipse, (0, 255, 0), 5)
+    # annotate the image with the eccentricity and the average depth of the defects
+    cv.putText(image_with_defects, "Eccentricity: " + str(hand.data['eccentricity']), (0, 50), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+    cv.putText(image_with_defects, "Defect Depth: " + str(hand.data['defectTop4Avg']), (0, 100), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+    
+    plt.imshow(cv.cvtColor(image_with_defects, cv.COLOR_BGR2RGB))
+    
+    # label the image with the name of the file
+    plt.title("Analysis")
+    # annotate each color with its meaning and the color of the circle at the bottom of the image
+    plt.annotate("Red: Concave Defects", (0, 0), (0, -20), xycoords='axes fraction', textcoords='offset points', va='top')
+    plt.annotate("Green: Centerline", (0, 0), (0, -40), xycoords='axes fraction', textcoords='offset points', va='top')
+    plt.annotate("Blue: Contour Center", (0, 0), (0, -60), xycoords='axes fraction', textcoords='offset points', va='top')
+    plt.annotate("Yellow: Hull Center", (0, 0), (0, -80), xycoords='axes fraction', textcoords='offset points', va='top')
+    plt.show()
+    # if debug and save is enabled, save the images
+    if SAVE:
+        print("I should save the images here")
+        #TODO: save the images
+
+# this function takes a hand and decides what pose it is in, then stores the result in the hand's data
 def decide_pose(hand: Hand) -> str:
+    print("Deciding pose...")
     # anomalies have both a high eccentricity and a high average of the top 4 convexity defects from the statistical analysis
-    # use the global tuning handles as the thresholds for the data
     # TODO: anomalies are likely to pick a strange hue of red to threshold at, maybe that's a good way to detect them?
+
+    if (hand.data['eccentricity'] > ECCENTRICITY_THRESHOLD) and (hand.data['defectTop4Avg'] > DEFECT_LENGTH_THRESHOLD):
+        if VERBOSE:
+            print("Anomaly detected")
+            print(str(hand.data['eccentricity']) + " > " + str(ECCENTRICITY_THRESHOLD))
+            print(str(hand.data['defectTop4Avg']) + " > " + str(DEFECT_LENGTH_THRESHOLD))
+        hand.data['predictedHandType'] = HandType.ANOMALY.name
+        return
     
-    if hand.data['eccentricity'] > DEFECT_LENGTH_THRESHOLD and hand.data['defectTop4Avg'] > ECCENTRICITY_THRESHOLD:
-        return "anomaly"
-    
-    # spays have high average of the top 4 convexity defects from the statistical analysis
+    # splays have high average of the top 4 convexity defects from the statistical analysis
     # fists and palms have low average of the top 4 convexity defects from the statistical analysis
     # fists have a low eccentricity and palms have a high eccentricity
-    
-    elif hand.data['defectTop4Avg'] > DEFECT_LENGTH_THRESHOLD:
-        return "splay"
-    
-    elif hand.data['eccentricity'] > ECCENTRICITY_THRESHOLD:
-        return "palm"
 
+    elif hand.data['defectTop4Avg'] >= DEFECT_LENGTH_THRESHOLD:
+        if VERBOSE:
+            print("Splay detected")
+            print(str(hand.data['defectTop4Avg']) + " < " + str(DEFECT_LENGTH_THRESHOLD))
+        hand.data['predictedHandType'] = HandType.SPLAY.name
+        return
+    
+    elif hand.data['eccentricity'] >= ECCENTRICITY_THRESHOLD:
+        if VERBOSE:
+            print("Palm detected")
+            print(str(hand.data['eccentricity']) + " > " + str(ECCENTRICITY_THRESHOLD))
+        hand.data['predictedHandType'] = HandType.PALM.name
+        return
+    
     else:
-        return "fist"
-        
+        hand.data['predictedHandType'] = HandType.FIST.name
+        if VERBOSE:
+            print("Fist detected")
+            print(str(hand.data['eccentricity']) + " > " + str(ECCENTRICITY_THRESHOLD))
+        return
+
+# this function takes a hand and decides where it is in the picture, then stores the result in the hand's data
 def decide_location(hand: Hand) -> tuple:
-    # based on the geometric center of the contour and the convex hull, determine the location of the hand
-    # how to do this is a TODO, maybe just threshold the center of the image and see if it's UDLR of the center?
-    # but how sensitive is the deadzone? maybe it should be a percentage of the image size?
+    print("Deciding location...")
+    # if anomaly, return
+    if hand.data['predictedHandType'] == HandType.ANOMALY.name:
+        return
+    
+    x, y = hand.data['center']
+    predictedHPos = None
+    predictedVPos = None
+    
+    if x < LEFT_THRESHOLD:
+        predictedHPos = HandHPos.LEFT.name
+    elif x > RIGHT_THRESHOLD:
+        predictedHPos = HandHPos.RIGHT.name
+    else:
+        predictedHPos = HandHPos.CENTER.name
+        
+    # this is backwards because the origin is at the top left
+    if y < TOP_THRESHOLD:
+        predictedVPos = HandVPos.TOP.name
+    elif y > BOTTOM_THRESHOLD:
+        predictedVPos = HandVPos.BOTTOM.name
+    else:
+        predictedVPos = HandVPos.CENTER.name
+        
+    hand.data['predictedVPos'] = predictedVPos
+    hand.data['predictedHPos'] = predictedHPos
+    if VERBOSE:
+        print(f'Predicted position: {predictedVPos} {predictedHPos}')
+    
+    return
     
 if __name__ == '__main__':
     main()
