@@ -14,7 +14,7 @@ from hand import *
 DEFECT_LENGTH_THRESHOLD = 5289.70
 
 # if a non-splay hand's overall eccentricity is less than this, it is a fist, otherwise it is a palm
-OVAL_THRESHOLD = 0.64
+ECCENTRICITY_THRESHOLD = 0.64
 
 # the geometric center of the outline of a hand is not the center of the hand, this corrects for that
 CENTERLINE_OFFSET = None
@@ -25,7 +25,7 @@ LIBRARY_PATH_IN = os.path.join(os.getcwd(), 'library\in')
 LIBRARY_PATH_OUT = os.path.join(os.getcwd(), 'library\out')
 
 # user flags
-DEBUG = False
+VERBOSE = False
 STAT = False
 # TODO: add a flag to save the images
 SAVE = False
@@ -33,10 +33,10 @@ SAVE = False
 def main():
     # if the program is run with --debug flag, set the DEBUG flag to true, it doesn't matter if the flag is in any position
     
-    if '--debug' in sys.argv:
+    if '--verbose' in sys.argv:
         print("Running in debug mode")
-        global DEBUG
-        DEBUG = True
+        global VERBOSE
+        VERBOSE = True
     
     if '--stat' in sys.argv:
         print("Gathering calibration statistics")
@@ -61,7 +61,8 @@ def main():
             if file.endswith('.jpg'):
                 # if DEBUG:
                     # print("Processing file: " + file)
-                hand = analyzeHand(os.path.join(root, file))
+                hand = analyze_hand(os.path.join(root, file))
+                # if stat, record the stats
                 if STAT:
                     if hand.hand_type == HandType.ANOMALY:
                         defect_lengths_anomaly.append(hand.data['defectTop4Avg'])
@@ -75,7 +76,8 @@ def main():
                     elif hand.hand_type == HandType.PALM:
                         defect_lengths_palm.append(hand.data['defectTop4Avg'])
                         eccentricities_palm.append(hand.data['eccentricity'])
-    
+                else:
+                    pass
     #output the stats
     if STAT:
         avg_defect_lengths_anomaly = sum(defect_lengths_anomaly) / len(defect_lengths_anomaly)
@@ -115,15 +117,66 @@ def main():
         ax2.bar(['Anomaly', 'Splay', 'Fist', 'Palm'], [avg_eccentricities_anomaly, avg_eccentricities_splay, avg_eccentricities_fist, avg_eccentricities_palm])
     
         plt.show()
-                    
+        # stats mode only, don't run the program
+        return
+
+# given an image, this function returns a binary image of skin and non-skin pixels
+def hull_from_color(image: cv.Mat) -> tuple:
+
+    # pull out the red channel
+    red_channel = image[:,:,2]
+
+    #gaussian blur the image to improve thresholding
+    blurred = cv.GaussianBlur(red_channel, (11,11), 0)
+
+    #otsu thresholding to get a binary image
+    _, thresholded_image = cv.threshold(blurred, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU)
     
+    #remove some noise by eroding then dilating
+    kernel = np.ones((15,15), np.uint8)
+    thresholded_image = cv.erode(thresholded_image, kernel, iterations=1)
+    thresholded_image = cv.dilate(thresholded_image, kernel, iterations=1)
+    
+    #fill in gaps by dilating then eroding
+    thresholded_image = cv.dilate(thresholded_image, kernel, iterations=1)
+    thresholded_image = cv.erode(thresholded_image, kernel, iterations=1)
+    
+    #get the largest contour and remove the rest, final denoising step
+    contours, hierarchy = cv.findContours(thresholded_image, cv.RETR_TREE, cv.CHAIN_APPROX_NONE)
+    hand_contour = max(contours, key=lambda x: cv.contourArea(x))
+
+    # get contour indices of the convex hull
+    hull = cv.convexHull(hand_contour, returnPoints=False)
+
+    # if debug, show the original, binary, and hull images with the contour drawn on the original
+    if VERBOSE:
+         
+        _, axs = plt.subplots(1, 4)
+        
+        # draw the contour on the original image, titled "original"
+        axs[0].set_title("Original")
+        axs[0].imshow(cv.drawContours(cv.cvtColor(image, cv.COLOR_BGR2RGB), contours, -1, (0,255,0), 5))
+        # show the binary image
+        axs[1].set_title("Binary")
+        axs[1].imshow(thresholded_image, cmap='gray')
+        
+        # connect the dots on the hull and draw it on a copy of the image
+        # use modulus to wrap around to the first point
+        hull_image = image.copy()
+        
+        for i in range(len(hull)):
+            cv.line(hull_image, tuple(hand_contour[hull[i][0]][0]), tuple(hand_contour[hull[(i+1) % len(hull)][0]][0]), (0,255,0), 5)
+        axs[2].set_title("Hull")
+        axs[2].imshow(cv.cvtColor(hull_image, cv.COLOR_BGR2RGB))
+    # return a dict of "hull" and "contour"
+    return hull, hand_contour
     
 # this function outputs a dictionary containing all the information about the hand
-def analyzeHand(path) -> Hand:
+def analyze_hand(path) -> Hand:
     # initialize the hand object
     hand = Hand(path)
     
-    if DEBUG:
+    if VERBOSE:
         print(hand)
     
     # get the contour and convex hull of the hand
@@ -139,7 +192,7 @@ def analyzeHand(path) -> Hand:
         "hullCenter": None,
     }
     # if debug, show the original image with the contour and defects drawn on it
-    if DEBUG:
+    if VERBOSE:
         image_with_defects = hand.img.copy()
         # strip to the 4 largest defects
         defects = defects[np.argsort(defects[:,0,3])][::-1][:4]
@@ -203,56 +256,30 @@ def analyzeHand(path) -> Hand:
     hand.data = data
     return hand
 
-# given an image, this function returns a binary image of skin and non-skin pixels
-def hull_from_color(image: cv.Mat) -> tuple:
-
-    # pull out the red channel
-    red_channel = image[:,:,2]
-
-    #gaussian blur the image to improve thresholding
-    blurred = cv.GaussianBlur(red_channel, (11,11), 0)
-
-    #otsu thresholding to get a binary image
-    _, thresholded_image = cv.threshold(blurred, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU)
+def decide_pose(hand: Hand) -> str:
+    # anomalies have both a high eccentricity and a high average of the top 4 convexity defects from the statistical analysis
+    # use the global tuning handles as the thresholds for the data
     
-    #remove some noise by eroding then dilating
-    kernel = np.ones((15,15), np.uint8)
-    thresholded_image = cv.erode(thresholded_image, kernel, iterations=1)
-    thresholded_image = cv.dilate(thresholded_image, kernel, iterations=1)
+    if hand.data['eccentricity'] > DEFECT_LENGTH_THRESHOLD and hand.data['defectTop4Avg'] > ECCENTRICITY_THRESHOLD:
+        return "anomaly"
     
-    #fill in gaps by dilating then eroding
-    thresholded_image = cv.dilate(thresholded_image, kernel, iterations=1)
-    thresholded_image = cv.erode(thresholded_image, kernel, iterations=1)
+    # spays have high average of the top 4 convexity defects from the statistical analysis
+    # fists and palms have low average of the top 4 convexity defects from the statistical analysis
+    # fists have a low eccentricity and palms have a high eccentricity
     
-    #get the largest contour and remove the rest, final denoising step
-    contours, hierarchy = cv.findContours(thresholded_image, cv.RETR_TREE, cv.CHAIN_APPROX_NONE)
-    hand_contour = max(contours, key=lambda x: cv.contourArea(x))
+    elif hand.data['defectTop4Avg'] > DEFECT_LENGTH_THRESHOLD:
+        return "splay"
+    
+    elif hand.data['eccentricity'] > ECCENTRICITY_THRESHOLD:
+        return "palm"
 
-    # get contour indices of the convex hull
-    hull = cv.convexHull(hand_contour, returnPoints=False)
-
-    # if debug, show the original, binary, and hull images with the contour drawn on the original
-    if DEBUG:
-         
-        _, axs = plt.subplots(1, 4)
+    else:
+        return "fist"
         
-        # draw the contour on the original image, titled "original"
-        axs[0].set_title("Original")
-        axs[0].imshow(cv.drawContours(cv.cvtColor(image, cv.COLOR_BGR2RGB), contours, -1, (0,255,0), 5))
-        # show the binary image
-        axs[1].set_title("Binary")
-        axs[1].imshow(thresholded_image, cmap='gray')
-        
-        # connect the dots on the hull and draw it on a copy of the image
-        # use modulus to wrap around to the first point
-        hull_image = image.copy()
-        
-        for i in range(len(hull)):
-            cv.line(hull_image, tuple(hand_contour[hull[i][0]][0]), tuple(hand_contour[hull[(i+1) % len(hull)][0]][0]), (0,255,0), 5)
-        axs[2].set_title("Hull")
-        axs[2].imshow(cv.cvtColor(hull_image, cv.COLOR_BGR2RGB))
-    # return a dict of "hull" and "contour"
-    return hull, hand_contour
-
+def decide_location(hand: Hand) -> tuple:
+    # based on the geometric center of the contour and the convex hull, determine the location of the hand
+    # how to do this is a TODO, maybe just threshold the center of the image and see if it's UDLR of the center?
+    # but how sensitive is the deadzone? maybe it should be a percentage of the image size?
+    
 if __name__ == '__main__':
     main()
