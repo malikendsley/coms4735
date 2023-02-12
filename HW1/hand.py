@@ -37,12 +37,14 @@ class Hand:
         if abs(image.shape[0] - image.shape[1]) / image.shape[0] > 0.1:
             print(f'Warning: {path} is not very square, the results may be inaccurate.')
         
-        # scale the image proportionally until it is 1000 pixels on one side
-        resize_factor = 1000 / max(image.shape[0], image.shape[1])
-        resized = cv.resize(image, (0, 0), fx=resize_factor, fy=resize_factor)
+        #if not 1000x1000 scale the image proportionally until it is 1000 pixels on one side
+        if image.shape[0] != 1000 and image.shape[1] != 1000:
+            print("Resizing image...")
+            resize_factor = 1000 / max(image.shape[0], image.shape[1])
+            image = cv.resize(image, (0, 0), fx=resize_factor, fy=resize_factor)
         
         # defaults for the hand object
-        self.img = resized
+        self.img = image
         self.hand_type = HandType.ANOMALY
         self.vpos = HandVPos.UNKNOWN
         self.hpos = HandHPos.UNKNOWN
