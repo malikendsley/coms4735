@@ -1,7 +1,6 @@
 import cv2 as cv
 import numpy as np
 from matplotlib import pyplot as plt
-from PIL import Image
 
 import os 
 import sys
@@ -299,7 +298,13 @@ def reduce_to_features(path) -> Hand:
 
 # this function shows several images of the hand in different stages of processing
 def display_hand(hand):
+    #title the entire plot with the prediction
     fig, axs = plt.subplots(1, 4)
+    fig.suptitle(f"Analysis for Prediction: {hand.data['predictedHandType']} at {hand.data['predictedVPos']} {hand.data['predictedHPos']}")
+    # space the subplots out, put the title close directly above the graphs
+    fig.tight_layout(pad=.5)
+    # make the image wider than it is tall
+    fig.set_size_inches(12, 4)
     # draw the contour on the original image, titled "original"
     axs[0].set_title("Original")
     axs[0].imshow(cv.drawContours(cv.cvtColor(hand.img, cv.COLOR_BGR2RGB), hand.data['fullContour'], -1, (0,255,0), 5))
@@ -354,9 +359,9 @@ def display_hand(hand):
         prediction_image = np.zeros((hand.img.shape[0] + 100, hand.img.shape[1], 3), np.uint8)
         prediction_image[:hand.img.shape[0], :hand.img.shape[1]] = hand.img
         # draw the predictedHandType, predictedVPos, and predictedHPos on the image on different lines
-        cv.putText(prediction_image, "Predicted Hand Type: " + hand.data['predictedHandType'], (10, hand.img.shape[0] + 20), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv.LINE_AA)
-        cv.putText(prediction_image, "Predicted Vertical Position: " + hand.data['predictedVPos'], (10, hand.img.shape[0] + 40), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv.LINE_AA)
-        cv.putText(prediction_image, "Predicted Horizontal Position: " + hand.data['predictedHPos'], (10, hand.img.shape[0] + 60), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv.LINE_AA)
+        cv.putText(prediction_image, "Predicted Hand Type: " + hand.data['predictedHandType'], (10, hand.img.shape[0] + 20), cv.FONT_HERSHEY_SIMPLEX, 3, (0, 0, 255), 1, cv.LINE_AA)
+        cv.putText(prediction_image, "Predicted Vertical Position: " + hand.data['predictedVPos'], (10, hand.img.shape[0] + 40), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 1, cv.LINE_AA)
+        cv.putText(prediction_image, "Predicted Horizontal Position: " + hand.data['predictedHPos'], (10, hand.img.shape[0] + 60), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 1, cv.LINE_AA)
         # resize the image down some 
         prediction_image = cv.resize(prediction_image, (0,0), fx=0.5, fy=0.5)
     
@@ -371,7 +376,6 @@ def save_hand_image(hand: Hand, path: str):
     print("Saving image...")
     subfolder = hand.hand_type.name.lower()
     fig = display_hand(hand)
-    print("savefig to " + f'{path}\\{subfolder}\\INTER_{hand.originalName}')
     # save the figure as a png and then convert it to a jpeg, required since matplotlib doesn't save as jpeg
     fig.savefig(f'{path}\\{subfolder}\\INTER_{hand.originalName}')
     plt.close(fig)
@@ -379,13 +383,12 @@ def save_hand_image(hand: Hand, path: str):
     prediction_image[:hand.img.shape[0], :hand.img.shape[1]] = hand.img
     
     # draw the predictedHandType, predictedVPos, and predictedHPos on the image on different lines at font scale 1
-    cv.putText(prediction_image, "Predicted Hand Type: "  + hand.data['predictedHandType'], (10, hand.img.shape[0] + 20), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv.LINE_AA)
-    cv.putText(prediction_image, "Predicted Vertical Position: " + hand.data['predictedVPos'], (10, hand.img.shape[0] + 40), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv.LINE_AA)
-    cv.putText(prediction_image, "Predicted Horizontal Position: " + hand.data['predictedHPos'], (10, hand.img.shape[0] + 60), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv.LINE_AA)
+    cv.putText(prediction_image, "Predicted Hand Type: "  + hand.data['predictedHandType'], (10, hand.img.shape[0] + 30), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv.LINE_AA)
+    cv.putText(prediction_image, "Predicted Vertical Position: " + hand.data['predictedVPos'], (10, hand.img.shape[0] + 60), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv.LINE_AA)
+    cv.putText(prediction_image, "Predicted Horizontal Position: " + hand.data['predictedHPos'], (10, hand.img.shape[0] + 90), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv.LINE_AA)
     # resize the image down some 
     prediction_image = cv.resize(prediction_image, (0,0), fx=0.9, fy=0.9)
     # save the image
-    print(f'{path}\\{subfolder}\\PRED_{hand.originalName}.jpeg')
     cv.imwrite(f'{path}\\{subfolder}\\PRED_{hand.originalName}.jpeg', prediction_image)
     
 # this function takes a hand and decides what pose it is in, then stores the result in the hand's data
