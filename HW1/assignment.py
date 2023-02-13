@@ -1,6 +1,7 @@
 import cv2 as cv
 import numpy as np
 from matplotlib import pyplot as plt
+from PIL import Image
 
 import os 
 import sys
@@ -79,25 +80,26 @@ def main():
     # walk through and analyze all the images in the library
     for root, _, files in os.walk(LIBRARY_PATH_IN):
         for file in files:
-            if file.endswith('.jpg'):
+            if file.endswith('.jpeg'):
                 print("=========================================\n")
                 # generate a preliminary hand object from the supplied filepath
                 hand = reduce_to_features(os.path.join(root, file))
                 # classify the hand
                 decide_pose(hand)
                 decide_location(hand)
-                
+                # printing shows the GT and the classification
                 print(hand)
                 
                 if VERBOSE:
-                    display_hand(hand)
                     print(hand.stat())
                 
+                
+                
+                #for later use
                 hands.append(hand)
                 
-                # if stat, record the stats
+                # if in calibration mode, collect stats
                 if STAT:
-                    
                     # classify by pose
                     if hand.hand_type == HandType.ANOMALY:
                         defect_lengths_anomaly.append(hand.data['defectTop4Avg'])
@@ -127,7 +129,9 @@ def main():
                         hpos_centers.append(hand.data['center'][0])
                     elif hand.hpos == HandHPos.RIGHT:
                         hpos_rights.append(hand.data['center'][0])
-                        
+                else:
+                    #save hand images
+                    save_hand_image(hand, LIBRARY_PATH_OUT)
                 print("=========================================\n")
     #output the stats
     if STAT:
@@ -295,8 +299,7 @@ def reduce_to_features(path) -> Hand:
 
 # this function shows several images of the hand in different stages of processing
 def display_hand(hand):
-    _, axs = plt.subplots(1, 4)
-        
+    fig, axs = plt.subplots(1, 4)
     # draw the contour on the original image, titled "original"
     axs[0].set_title("Original")
     axs[0].imshow(cv.drawContours(cv.cvtColor(hand.img, cv.COLOR_BGR2RGB), hand.data['fullContour'], -1, (0,255,0), 5))
@@ -341,25 +344,50 @@ def display_hand(hand):
     # show the fitted ellipse
     ellipse = cv.fitEllipse(contour_of_hull)
     cv.ellipse(image_with_defects, ellipse, (0, 255, 0), 5)
-    # annotate the image with the eccentricity and the average depth of the defects
-    cv.putText(image_with_defects, "Eccentricity: " + str(hand.data['eccentricity']), (0, 50), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-    cv.putText(image_with_defects, "Defect Depth: " + str(hand.data['defectTop4Avg']), (0, 100), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+    axs[3].set_title("Defects")
+    axs[3].imshow(cv.cvtColor(image_with_defects, cv.COLOR_BGR2RGB))
+    if VERBOSE:
+        plt.show()
+    if VERBOSE:
+    # in a separate image, show the original image with the prediction labels on it
+    # extend the image down a few hundred pixels to show the prediction
+        prediction_image = np.zeros((hand.img.shape[0] + 100, hand.img.shape[1], 3), np.uint8)
+        prediction_image[:hand.img.shape[0], :hand.img.shape[1]] = hand.img
+        # draw the predictedHandType, predictedVPos, and predictedHPos on the image on different lines
+        cv.putText(prediction_image, "Predicted Hand Type: " + hand.data['predictedHandType'], (10, hand.img.shape[0] + 20), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv.LINE_AA)
+        cv.putText(prediction_image, "Predicted Vertical Position: " + hand.data['predictedVPos'], (10, hand.img.shape[0] + 40), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv.LINE_AA)
+        cv.putText(prediction_image, "Predicted Horizontal Position: " + hand.data['predictedHPos'], (10, hand.img.shape[0] + 60), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv.LINE_AA)
+        # resize the image down some 
+        prediction_image = cv.resize(prediction_image, (0,0), fx=0.5, fy=0.5)
     
-    plt.imshow(cv.cvtColor(image_with_defects, cv.COLOR_BGR2RGB))
-    
-    # label the image with the name of the file
-    plt.title("Analysis")
-    # annotate each color with its meaning and the color of the circle at the bottom of the image
-    plt.annotate("Red: Concave Defects", (0, 0), (0, -20), xycoords='axes fraction', textcoords='offset points', va='top')
-    plt.annotate("Green: Centerline", (0, 0), (0, -40), xycoords='axes fraction', textcoords='offset points', va='top')
-    plt.annotate("Blue: Contour Center", (0, 0), (0, -60), xycoords='axes fraction', textcoords='offset points', va='top')
-    plt.annotate("Yellow: Hull Center", (0, 0), (0, -80), xycoords='axes fraction', textcoords='offset points', va='top')
-    plt.show()
-    # if debug and save is enabled, save the images
-    if SAVE:
-        print("I should save the images here")
-        #TODO: save the images
+        cv.imshow("Prediction", prediction_image)
+        cv.waitKey(0)
+        cv.destroyAllWindows()
 
+    return fig
+
+# save annotated or intermediate hand to this path
+def save_hand_image(hand: Hand, path: str):
+    print("Saving image...")
+    subfolder = hand.hand_type.name.lower()
+    fig = display_hand(hand)
+    print("savefig to " + f'{path}\\{subfolder}\\INTER_{hand.originalName}')
+    # save the figure as a png and then convert it to a jpeg, required since matplotlib doesn't save as jpeg
+    fig.savefig(f'{path}\\{subfolder}\\INTER_{hand.originalName}')
+    plt.close(fig)
+    prediction_image = np.zeros((hand.img.shape[0] + 100, hand.img.shape[1], 3), np.uint8)
+    prediction_image[:hand.img.shape[0], :hand.img.shape[1]] = hand.img
+    
+    # draw the predictedHandType, predictedVPos, and predictedHPos on the image on different lines at font scale 1
+    cv.putText(prediction_image, "Predicted Hand Type: "  + hand.data['predictedHandType'], (10, hand.img.shape[0] + 20), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv.LINE_AA)
+    cv.putText(prediction_image, "Predicted Vertical Position: " + hand.data['predictedVPos'], (10, hand.img.shape[0] + 40), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv.LINE_AA)
+    cv.putText(prediction_image, "Predicted Horizontal Position: " + hand.data['predictedHPos'], (10, hand.img.shape[0] + 60), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv.LINE_AA)
+    # resize the image down some 
+    prediction_image = cv.resize(prediction_image, (0,0), fx=0.9, fy=0.9)
+    # save the image
+    print(f'{path}\\{subfolder}\\PRED_{hand.originalName}.jpeg')
+    cv.imwrite(f'{path}\\{subfolder}\\PRED_{hand.originalName}.jpeg', prediction_image)
+    
 # this function takes a hand and decides what pose it is in, then stores the result in the hand's data
 def decide_pose(hand: Hand) -> str:
     print("Deciding pose...")

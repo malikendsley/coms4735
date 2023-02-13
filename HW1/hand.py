@@ -48,6 +48,8 @@ class Hand:
         self.hand_type = HandType.ANOMALY
         self.vpos = HandVPos.UNKNOWN
         self.hpos = HandHPos.UNKNOWN
+        # the original name of the file, used for saving the output, remove file extension
+        self.originalName = os.path.splitext(os.path.basename(path))[0]
         self.data = {
         "fullContour": None,
         "handContour": None,
