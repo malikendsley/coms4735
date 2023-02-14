@@ -654,9 +654,6 @@ def decide_pose(hand: Hand) -> str:
     # anomalies have both a high eccentricity and a high average of the top 4 convexity defects from the statistical analysis
     # TODO: anomalies are likely to pick a strange hue of red to threshold at, maybe that's a good way to detect them?
     if hand.data["eccentricity"] > ECCENTRICITY_MAX or hand.data["eccentricity"] < ECCENTRICITY_MIN:
-        print("Anomaly detected")
-        print("eccentricity: " + str(hand.data["eccentricity"]))
-        print("defectTop4Avg: " + str(hand.data["defectTop4Avg"]))
         if VERBOSE:
             print("Anomaly detected")
             print("eccentricity: " + str(hand.data["eccentricity"]))
