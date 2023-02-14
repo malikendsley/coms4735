@@ -100,7 +100,10 @@ def main():
             if VERBOSE:
                 print(hands[i])
         print("Hands read, evaluating...")
-        evaluate_combo(hands, lockCombo)
+        success = evaluate_combo(hands, lockCombo)
+        if VERBOSE:
+            # show the images
+            display_hand_sequence(lockCombo, hands, success)
         return
     # otherwise, walk through and analyze all the images in the library not in the lock folder
     else:
@@ -320,11 +323,6 @@ def main():
 
         plt.show()
         # stats mode only, don't run the program
-
-        # if saving the calibration data, save it to a file
-        if SAVE:
-            print("I should save the calibration data to a file")
-            # TODO save the calibration data to a file
         return
 
 
@@ -342,7 +340,32 @@ def parse_combo_file(path: str) -> list:
             lock.append((line[0], line[1], line[2]))
     return lock
 
-
+# this function displays the hand sequence that was used to unlock the lock
+def display_hand_sequence(combo, hands: list[Hand], wasSuccessful: bool):
+    # display the thresholded hand sequence
+    fig, axs = plt.subplots(1, len(hands))
+    fig.tight_layout(pad=2.0)
+    comboString = ""
+    for hand in combo:
+        comboString += f"{hand[0]} {hand[1]} {hand[2]}\n"
+    if wasSuccessful:
+        fig.suptitle(f"Successful Combo\n\n{comboString}")
+    else:
+        fig.suptitle(f"Failed Combo\n\n{comboString}")
+    # hand.binary is a numpy array of the thresholded hand, show this as an image
+    for i, hand in enumerate(hands):
+        axs[i].set_title(f"Hand {i + 1} \n {hand.data['predictedHandType']} at {hand.data['predictedVPos']} {hand.data['predictedHPos']}")
+        axs[i].imshow(hand.data['binary'], cmap="gray")
+        # put WRONG below the image if the prediction was wrong or CORRECT if it was correct
+        if combo[i][0] == "NONE":
+            axs[i].text(0.5, 0.5, "CORRECT", horizontalalignment='center', verticalalignment='center', transform=axs[i].transAxes, color="green")
+        elif combo[i][0] != hand.data['predictedHandType'] or combo[i][1] != hand.data['predictedVPos'] or combo[i][2] != hand.data['predictedHPos']:
+            axs[i].text(0.5, 0.5, "WRONG", horizontalalignment='center', verticalalignment='center', transform=axs[i].transAxes, color="red")
+        else:
+            axs[i].text(0.5, 0.5, "CORRECT", horizontalalignment='center', verticalalignment='center', transform=axs[i].transAxes, color="green")
+    plt.show()
+    
+# this function evaluates the lock combo against the predictions and returns whether or not the combo was correct
 def evaluate_combo(lock, hands: list[Hand]) -> bool:
     if len(lock) != len(hands):
         if VERBOSE:
@@ -353,30 +376,26 @@ def evaluate_combo(lock, hands: list[Hand]) -> bool:
 
     # check against the predictions, not ground truth
     for lock_phase, hand in zip(hands, lock):
-        if VERBOSE:
-            print(
-                f'Checking lock phase {lock_phase} against prediction {hand.data["predictedHandType"]}, {hand.data["predictedVPos"]}, {hand.data["predictedHPos"]}'
-            )
+        print(
+            f'Checking lock phase {lock_phase} against prediction {hand.data["predictedHandType"]}, {hand.data["predictedVPos"]}, {hand.data["predictedHPos"]}'
+        )
         # each prediction is a hand object
         # each lock_phase is a tuple of the hand type, vertical position, and horizontal position
         # "NONE" is a wildcard, so if a hand type, vertical position, or horizontal position is "NONE", it will match any hand type, vertical position, or horizontal position
         if lock_phase[0] != "NONE" and lock_phase[0] != hand.data["predictedHandType"]:
-            if VERBOSE:
-                print(
-                    f'Lock phase {lock_phase} does not match prediction {hand.data["predictedHandType"]} on hand \n {hand}'
-                )
+            print(
+                f'Lock phase {lock_phase} does not match prediction {hand.data["predictedHandType"]} on hand \n {hand}'
+            )
             return False
         if lock_phase[1] != "NONE" and lock_phase[1] != hand.data["predictedVPos"]:
-            if VERBOSE:
-                print(
-                    f'Lock phase {lock_phase} does not match vertical prediction {hand.data["predictedVPos"]} on hand \n {hand}'
-                )
+            print(
+                f'Lock phase {lock_phase} does not match vertical prediction {hand.data["predictedVPos"]} on hand \n {hand}'
+            )
             return False
         if lock_phase[2] != "NONE" and lock_phase[2] != hand.data["predictedHPos"]:
-            if VERBOSE:
-                print(
-                    f'Lock phase {lock_phase} does not match horizontal prediction {hand.data["predictedHPos"]} on hand \n {hand}'
-                )
+            print(
+                f'Lock phase {lock_phase} does not match horizontal prediction {hand.data["predictedHPos"]} on hand \n {hand}'
+            )
             return False
         if VERBOSE:
             print(
@@ -384,7 +403,6 @@ def evaluate_combo(lock, hands: list[Hand]) -> bool:
             )
     print("Lock combination is correct! Opening...")
     return True
-
 
 # this function is the first phase of reduction, it generates contours and binary images
 def reduce_to_binary(image: cv.Mat) -> tuple:
