@@ -15,18 +15,21 @@ class HandType(Enum):
     FIST = 1
     PALM = 2
     ANOMALY = 3
+    NA = 4
     
 class HandVPos(Enum):
     TOP = 0
     CENTER = 1
     BOTTOM = 2
     UNKNOWN = 3
+    NA = 4
     
 class HandHPos(Enum):
     LEFT = 0
     CENTER = 1
     RIGHT = 2
     UNKNOWN = 3
+    NA = 4
 
 # hand has ground truth information about the hand and the processing information in a dictionary
 class Hand:
@@ -62,7 +65,12 @@ class Hand:
         "predictedVPos": HandVPos.UNKNOWN.name,
         "predictedHPos": HandHPos.UNKNOWN.name,
     }
-        
+        # if the file name does not start with a capital letter, don't set ground truth
+        if not path[0].isupper():
+            self.hand_type = HandType.NA
+            self.vpos = HandVPos.NA
+            self.hpos = HandHPos.NA
+            return
         # parse the filename for the hand type, vertical position, and horizontal position
         filename = os.path.splitext(os.path.basename(path))[0]
 
@@ -75,8 +83,6 @@ class Hand:
             self.vpos = HandVPos[tags[1]]
             self.hpos = HandHPos[tags[2]]
     
-    #assemble the hand object and return it, anomalies are parsed as a special case
-        
     def __str__(self):
         return (f'{"Ground Truth:":<20} {self.hand_type.name:<10} {self.vpos.name:<10} {self.hpos.name:<10}\n {"Prediction:":<20} {self.data["predictedHandType"]:<10} {self.data["predictedVPos"]:<10} {self.data["predictedHPos"]:<10}')
 
