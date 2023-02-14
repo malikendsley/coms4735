@@ -14,6 +14,9 @@ DEFECT_LENGTH_THRESHOLD = 5289.70
 # if a non-splay hand's overall eccentricity is less than this, it is a fist, otherwise it is a palm
 ECCENTRICITY_THRESHOLD = 0.36
 
+# an eccentricity outside of this is considered an anomaly
+ECCENTRICITY_MIN = 0.1
+ECCENTRICITY_MAX = 0.9
 # these are breakpoint coordinates for the vertical and horizontal position of the hand
 # the origin is the top left corner of the image
 
@@ -324,7 +327,6 @@ def main():
         plt.show()
         # stats mode only, don't run the program
         return
-
 
 # this function parses the combo.txt file to returns the lock combo
 def parse_combo_file(path: str) -> list:
@@ -651,7 +653,17 @@ def decide_pose(hand: Hand) -> str:
     print("Deciding pose...")
     # anomalies have both a high eccentricity and a high average of the top 4 convexity defects from the statistical analysis
     # TODO: anomalies are likely to pick a strange hue of red to threshold at, maybe that's a good way to detect them?
-
+    if hand.data["eccentricity"] > ECCENTRICITY_MAX or hand.data["eccentricity"] < ECCENTRICITY_MIN:
+        print("Anomaly detected")
+        print("eccentricity: " + str(hand.data["eccentricity"]))
+        print("defectTop4Avg: " + str(hand.data["defectTop4Avg"]))
+        if VERBOSE:
+            print("Anomaly detected")
+            print("eccentricity: " + str(hand.data["eccentricity"]))
+            print("defectTop4Avg: " + str(hand.data["defectTop4Avg"]))
+        hand.data["predictedHandType"] = HandType.ANOMALY.name
+        return
+    
     if (hand.data["eccentricity"] > ECCENTRICITY_THRESHOLD) and (
         hand.data["defectTop4Avg"] > DEFECT_LENGTH_THRESHOLD
     ):
