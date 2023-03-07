@@ -21,5 +21,5 @@ for i, f in enumerate(files):
 #best_bit_depths = bit_hyper_tuner(crowd_matrix, ppms)
 # shown to be (1, 3, 2)
 
-score_images(ppms, crowd_matrix)
+score_images_color(ppms, crowd_matrix)
 

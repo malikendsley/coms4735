@@ -2,6 +2,7 @@
 import cv2
 import numpy as np
 
+laplace_matrix = np.array([[1, 1, 1], [1, -8, 1], [1, 1, 1]])
 
 class PPMImage:
     
@@ -24,9 +25,14 @@ class PPMImage:
         self.grayscale = np.sum(self.grayscale, axis=2) // 3
         self.grayscale = self.grayscale.astype(np.uint8)
 
-        # make the histogram for the image
+        #convolve the laplace matrix against the grayscale image
+        
+        
+        
+        # make the color histogram for the image
         bins = [np.linspace(0, 2**bit_depths[i], 2**bit_depths[i] + 1) for i in range(3)]
-        self.histogram, _ =  np.histogramdd(self.reduced.reshape(-1, 3), bins=bins)
+        self.color_histogram, _ =  np.histogramdd(self.reduced.reshape(-1, 3), bins=bins)
+        
         
     def display(self, factor=1):
         pic = cv2.resize(self.image, (0,0), fx=factor, fy=factor)
@@ -60,5 +66,5 @@ class PPMImage:
         for i in range(3):
             self.reduced[:,:,i] = self.reduced[:,:,i] >> (8 - bit_depths[i])
         bins = [np.linspace(0, 2**bit_depths[i], 2**bit_depths[i] + 1) for i in range(3)]
-        self.histogram, _ =  np.histogramdd(self.reduced.reshape(-1, 3), bins=bins)
+        self.color_histogram, _ =  np.histogramdd(self.reduced.reshape(-1, 3), bins=bins)
     
