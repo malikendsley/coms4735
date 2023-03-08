@@ -1,5 +1,6 @@
 
 import os
+from typing import List
 import numpy as np
 from image import PPMImage
 from util import *
@@ -28,14 +29,17 @@ def main():
     
     print("Loading images...")
     # get another list in reduced bit depth
-    ppms: list[PPMImage] = []
+    ppms: List[PPMImage] = []
     for i, f in enumerate(testing_files if TEST else files):
         print(f, end=" | ")
         if (i + 1) % 5 == 0:
             print()
-        ppms.append(PPMImage('img/' + f, (1, 3, 2), 9))
+        ppms.append(PPMImage('img/' + f, (1, 3, 2), 9, 79))
     print("\ndone")
     
+    # ===================== Testing ====================== #
+
+
     # ====================== Step 1 ====================== #
     
     #run the hyper tuner to find the best bit depths for the color
@@ -50,9 +54,19 @@ def main():
     # best_texture_bit_depth = texture_hyper_tuner(crowd_matrix, ppms)
     # shown to be 9 with score of 6836.0
 
-    score_images_texture(ppms, crowd_matrix)
+    #score_images_texture(ppms, crowd_matrix)
 
     # ====================== Step 3 ====================== #
+
+    # run the hyper tuner to find the best threshold for the binary images
+    #best_binary_threshold = shape_hyper_tuner(crowd_matrix, ppms)
+    # shown to be 79 with score of 6563
+    #print(best_binary_threshold)
+    #score_images_shape(ppms, crowd_matrix)
+
+    # ====================== Step 4 ====================== #
+    
+    
 
 if __name__ == '__main__':
     main()

@@ -7,7 +7,7 @@ laplace_matrix = np.array([[1, 1, 1], [1, -8, 1], [1, 1, 1]])
 
 class PPMImage:
     #takes a filename, and a 3-tuple of the RGB bit depths for the histogram
-    def __init__(self, filename: str, color_depth: Tuple[int, int, int] = (8,8,8), laplace_depth = 11):
+    def __init__(self, filename: str, color_depth: Tuple[int, int, int] = (8,8,8), laplace_depth = 11, binary_threshold = 128, binary_symmetry_threshold = 128):
         self.bit_depths = color_depth
         self.laplace_depth = laplace_depth
         self.filename = filename
@@ -17,6 +17,8 @@ class PPMImage:
         self.color = self.init_color(self.original_image, color_depth)
         self.grayscale = self.init_grayscale(self.original_image)
         self.texture = self.init_texture(self.grayscale, laplace_depth)
+        self.binary_for_shape = self.init_binary(self.grayscale, binary_threshold)
+        self.binary_for_symmetry = self.init_binary(self.grayscale, binary_symmetry_threshold)
         
         # make the color histogram for the image
         bins = [np.linspace(0, 2**color_depth[i], 2**color_depth[i] + 1) for i in range(3)]
@@ -25,7 +27,7 @@ class PPMImage:
         # make the texture histogram for the image
         bins = np.linspace(0, 2**laplace_depth, 2**laplace_depth + 1)
         self.texture_histogram, _ = np.histogram(self.texture.reshape(-1), bins=bins)
-         
+        
     #change the bit depth of the image without reloading it
     def set_color_depth(self, bit_depths):
         self.bit_depths = bit_depths
@@ -39,6 +41,13 @@ class PPMImage:
         self.texture = self.init_texture(self.grayscale, laplace_depth)
         bins = np.linspace(0, 2**laplace_depth, 2**laplace_depth + 1)
         self.texture_histogram, _ = np.histogram(self.texture.reshape(-1), bins=bins)
+    
+    #change the binary threshold without reloading it
+    def set_binary_threshold(self, threshold):
+        self.binary_for_shape = self.init_binary(self.grayscale, threshold)
+    
+    def set_binary_symmetry_threshold(self, threshold):
+        self.binary_for_symmetry = self.init_binary(self.grayscale, threshold)
     
     def init_color(self, image: cv2.Mat, color_depth=(8,8,8)):
         color = image.copy()
@@ -57,6 +66,10 @@ class PPMImage:
         texture = np.abs(cv2.filter2D(texture, -1, laplace_matrix))
         texture  = texture >> (11 - laplace_depth)
         return texture
+    
+    def init_binary(self, image: cv2.Mat, threshold=128) -> np.ndarray:
+
+        return (image >= threshold).astype(np.uint8)
     
     def laplace_convolve(self, image):
         padded = np.pad(image, 1, mode='edge')
@@ -110,3 +123,10 @@ class PPMImage:
         cv2.waitKey(0)
         cv2.destroyAllWindows()
         
+    def show_binary(self, factor=1):
+        pic = cv2.resize(self.binary_for_shape, (0,0), fx=factor, fy=factor, interpolation=cv2.INTER_NEAREST)
+        #convert 1s to 255s
+        pic[pic == 1] = 255
+        cv2.imshow(str(self.filename), pic)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
