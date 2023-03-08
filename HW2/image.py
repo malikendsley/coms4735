@@ -6,9 +6,8 @@ import numpy as np
 laplace_matrix = np.array([[1, 1, 1], [1, -8, 1], [1, 1, 1]])
 
 class PPMImage:
-    
     #takes a filename, and a 3-tuple of the RGB bit depths for the histogram
-    def __init__(self, filename: str, color_depth: Tuple[int, int, int] = (8,8,8), laplace_depth = 8):
+    def __init__(self, filename: str, color_depth: Tuple[int, int, int] = (8,8,8), laplace_depth = 11):
         self.bit_depths = color_depth
         self.laplace_depth = laplace_depth
         self.filename = filename
@@ -22,9 +21,10 @@ class PPMImage:
         # make the color histogram for the image
         bins = [np.linspace(0, 2**color_depth[i], 2**color_depth[i] + 1) for i in range(3)]
         self.color_histogram, _ =  np.histogramdd(self.color.reshape(-1, 3), bins=bins)
-        
-        #make the texture histogram for the image
-        self.texture_histogram, _ = np.histogramdd(self.texture.reshape(-1, 1), bins=[np.linspace(-255, 255, 511)])
+    
+        # make the texture histogram for the image
+        bins = np.linspace(0, 2**laplace_depth, 2**laplace_depth + 1)
+        self.texture_histogram, _ = np.histogram(self.texture.reshape(-1), bins=bins)
          
     #change the bit depth of the image without reloading it
     def set_color_depth(self, bit_depths):
@@ -33,10 +33,12 @@ class PPMImage:
         bins = [np.linspace(0, 2**bit_depths[i], 2**bit_depths[i] + 1) for i in range(3)]
         self.color_histogram, _ =  np.histogramdd(self.color.reshape(-1, 3), bins=bins)
     
+    #change the bit depth of the texture without reloading it
     def set_laplace_depth(self, laplace_depth):
         self.laplace_depth = laplace_depth
         self.texture = self.init_texture(self.grayscale, laplace_depth)
-        self.texture_histogram, _ = np.histogramdd(self.texture.reshape(-1, 1), bins=[np.linspace(-255, 255, 511)])
+        bins = np.linspace(0, 2**laplace_depth, 2**laplace_depth + 1)
+        self.texture_histogram, _ = np.histogram(self.texture.reshape(-1), bins=bins)
     
     def init_color(self, image: cv2.Mat, color_depth=(8,8,8)):
         color = image.copy()
@@ -50,10 +52,10 @@ class PPMImage:
         grayscale = grayscale.astype(np.uint8)
         return grayscale
     
-    def init_texture(self, grayscale_image: cv2.Mat, laplace_depth=8):
-        texture = grayscale_image.copy()
-        texture = cv2.filter2D(texture, -1, laplace_matrix)
-        texture  = texture >> (8 - laplace_depth)
+    def init_texture(self, grayscale_image: cv2.Mat, laplace_depth=11):
+        texture = grayscale_image.copy().astype(np.int16)
+        texture = np.abs(cv2.filter2D(texture, -1, laplace_matrix))
+        texture  = texture >> (11 - laplace_depth)
         return texture
     
     def laplace_convolve(self, image):
@@ -63,7 +65,11 @@ class PPMImage:
         for i in range(image.shape[0]):
             for j in range(image.shape[1]):
                 convolved[i,j] = np.sum(padded[i:i+3, j:j+3] * laplace_matrix)
-        print("Convolved\n", convolved)
+        # absolute value of the convolved image
+        convolved = np.abs(convolved)
+        # convert to unsigned 16 bit integer
+        convolved = convolved.astype(np.uint16)
+        return convolved
     
     # # # # # # # # # # #
     # Display Functions #
@@ -78,9 +84,8 @@ class PPMImage:
         
     # show the bit reduced image
     def show_color(self, factor=1):
-        #avoid modifying the original image
         pic = self.color.copy()
-        # blow up the data to 255 so we can display it
+        #scale the values back to 255
         for i in range(3):
             pic[:,:,i] = pic[:,:,i] * (255 // (2**self.bit_depths[i] - 1))
         pic = cv2.resize(pic, (0,0), fx=factor, fy=factor, interpolation=cv2.INTER_NEAREST)
@@ -98,7 +103,7 @@ class PPMImage:
     # show the edge image
     def show_texture(self, factor=1):
         pic = self.texture.copy()
-        #scale the values to 255 with multiplication
+        #scale the values back to 255
         pic = pic * (255 // (2**self.laplace_depth - 1))
         pic = cv2.resize(pic, (0,0), fx=factor, fy=factor, interpolation=cv2.INTER_NEAREST)
         cv2.imshow(str(self.filename), pic)
