@@ -3,6 +3,10 @@ import numpy as np
 import math
 import itertools
 
+######################
+# Distance Functions #
+######################
+
 # get the L1 distance between two images w.r.t color
 def distance_color(img1: PPMImage, img2: PPMImage):
     if img1.bit_depths != img2.bit_depths:
@@ -64,8 +68,12 @@ def distance_gestalt(img1: PPMImage, img2: PPMImage, weights: "list[float]"):
     
     return np.sum(distances)
     
+#####################
+# Scores and Tuners #    
+#####################
+
 # score the images according to color against the crowd matrix
-def score_images_color(ppms, crowd_matrix):
+def score_images_color(ppms, crowd_matrix, personal_matrix=None):
     # measure the distance between each image
     distance_matrix = np.zeros((len(ppms), len(ppms)))
     for i in range(len(ppms)):
@@ -75,7 +83,13 @@ def score_images_color(ppms, crowd_matrix):
     # get the 3 closest images for each image, then look up the crowd score for each of those
     top3 = np.array([np.argsort(distance_matrix[i])[1:4] for i in range(len(ppms))])
     crowd3 = np.array([crowd_matrix[i][top3[i]] for i in range(len(ppms))])
-    return np.sum(crowd3), top3
+    
+    # get the personal score for the system
+    personal_score = None
+    if personal_matrix is not None:
+        personal_score = row_intersections(personal_matrix, top3 + 1)
+    
+    return np.sum(crowd3), top3 + 1, personal_score
 
 # optimizes the color bit depths for the given images to give the best score
 def color_hyper_tuner(crowd_matrix, ppms: "list[PPMImage]"):
@@ -87,7 +101,7 @@ def color_hyper_tuner(crowd_matrix, ppms: "list[PPMImage]"):
             for b in range(1, 7):
                 for ppm in ppms:
                     ppm.set_color_depth((r, g, b))
-                score = score_images_color(ppms, crowd_matrix)
+                score = score_images_color(ppms, crowd_matrix)[0]
                 if score > best:
                     best = score
                     best_bit_depths = (r, g, b)
@@ -96,7 +110,7 @@ def color_hyper_tuner(crowd_matrix, ppms: "list[PPMImage]"):
     return best_bit_depths
 
 # score the images according to texture against the crowd matrix
-def score_images_texture(ppms, crowd_matrix):
+def score_images_texture(ppms, crowd_matrix, personal_matrix=None):
     # measure the distance between each image
     distance_matrix = np.zeros((len(ppms), len(ppms)))
     for i in range(len(ppms)):
@@ -106,7 +120,13 @@ def score_images_texture(ppms, crowd_matrix):
     # get the 3 closest images for each image, then look up the crowd score for each of those
     top3 = np.array([np.argsort(distance_matrix[i])[1:4] for i in range(len(ppms))])
     crowd3 = np.array([crowd_matrix[i][top3[i]] for i in range(len(ppms))])
-    return np.sum(crowd3)
+    
+    # get the personal score for the system
+    personal_score = None
+    if personal_matrix is not None:
+        personal_score = row_intersections(personal_matrix, top3 + 1)
+    
+    return np.sum(crowd3), top3 + 1, personal_score
 
 # optimizes the texture bit depth for the given images to give the best score
 def texture_hyper_tuner(crowd_matrix, ppms: "list[PPMImage]"):
@@ -116,7 +136,7 @@ def texture_hyper_tuner(crowd_matrix, ppms: "list[PPMImage]"):
     for d in range(1, 12):
         for ppm in ppms:
             ppm.set_laplace_depth(d)
-        score = score_images_texture(ppms, crowd_matrix)
+        score = score_images_texture(ppms, crowd_matrix)[0]
         if score > best:
             best = score
             best_bit_depth = d
@@ -125,7 +145,7 @@ def texture_hyper_tuner(crowd_matrix, ppms: "list[PPMImage]"):
     return best_bit_depth
 
 # score the images according to shape against the crowd matrix
-def score_images_shape(ppms, crowd_matrix):
+def score_images_shape(ppms, crowd_matrix, personal_matrix=None):
     # measure the distance between each image
     distance_matrix = np.zeros((len(ppms), len(ppms)))
     for i in range(len(ppms)):
@@ -135,7 +155,13 @@ def score_images_shape(ppms, crowd_matrix):
     # get the 3 closest images for each image, then look up the crowd score for each of those
     top3 = np.array([np.argsort(distance_matrix[i])[1:4] for i in range(len(ppms))])
     crowd3 = np.array([crowd_matrix[i][top3[i]] for i in range(len(ppms))])
-    return np.sum(crowd3), top3
+    
+    # get the personal score for the system
+    personal_score = None
+    if personal_matrix is not None:
+        personal_score = row_intersections(personal_matrix, top3 + 1)
+    
+    return np.sum(crowd3), top3 + 1, personal_score
 
 # optimizes the shape bit depth for the given images to give the best score
 def shape_hyper_tuner(crowd_matrix, ppms: "list[PPMImage]"):
@@ -145,7 +171,7 @@ def shape_hyper_tuner(crowd_matrix, ppms: "list[PPMImage]"):
     for t in range(1, 256):
         for ppm in ppms:
             ppm.set_binary_threshold(t)
-        score = score_images_shape(ppms, crowd_matrix)
+        score = score_images_shape(ppms, crowd_matrix)[0]
         if score > best:
             best = score
             threshold = t
@@ -154,19 +180,25 @@ def shape_hyper_tuner(crowd_matrix, ppms: "list[PPMImage]"):
     return threshold
 
 # score the images according to symmetry against the crowd matrix
-def score_images_symmetry(ppms, crowd_matrix):
+def score_images_symmetry(ppms, crowd_matrix, personal_matrix=None):
     # get the symmetry score for each image
     scores = np.zeros(len(ppms))
     for i in range(len(ppms)):
         scores[i] = distance_symmetry(ppms[i])
     
-    top3 = []
+    top3 = np.zeros((len(ppms), 3), dtype=int)
     for i, score in enumerate(scores):
         #find the 3 closest image indexes by finding the smallest delta
-        top3.append(np.argsort(np.abs(scores - score))[1:4])
+        top3[i] = np.argsort(np.abs(scores - score))[1:4]
     # use these to look up the crowd scores
     crowd3 = np.array([crowd_matrix[i][top3[i]] for i in range(len(ppms))])
-    return np.sum(crowd3), top3
+    
+    # get the personal score for the system
+    personal_score = None
+    if personal_matrix is not None:
+        personal_score = row_intersections(personal_matrix, top3 + 1)
+    
+    return np.sum(crowd3), top3 + 1, personal_score
 
 # optimizes the symmetry bit depth for the given images to give the best score
 def symmetry_hyper_tuner(crowd_matrix, ppms: "list[PPMImage]"):
@@ -176,7 +208,7 @@ def symmetry_hyper_tuner(crowd_matrix, ppms: "list[PPMImage]"):
     for t in range(1, 256):
         for ppm in ppms:
             ppm.set_binary_symmetry_threshold(t)
-        score = score_images_symmetry(ppms, crowd_matrix)
+        score = score_images_symmetry(ppms, crowd_matrix)[0]
         if score > best:
             best = score
             threshold = t
@@ -185,7 +217,7 @@ def symmetry_hyper_tuner(crowd_matrix, ppms: "list[PPMImage]"):
     return threshold
 
 # score the images according to gestalt against the crowd matrix
-def score_images_gestalt(ppms, crowd_matrix, weights):
+def score_images_gestalt(ppms, crowd_matrix, weights, personal_matrix=None):
     # measure the distance between each image
     distance_matrix = np.zeros((len(ppms), len(ppms)))
     for i in range(len(ppms)):
@@ -195,7 +227,13 @@ def score_images_gestalt(ppms, crowd_matrix, weights):
     # get the 3 closest images for each image, then look up the crowd score for each of those
     top3 = np.array([np.argsort(distance_matrix[i])[1:4] for i in range(len(ppms))])
     crowd3 = np.array([crowd_matrix[i][top3[i]] for i in range(len(ppms))])
-    return np.sum(crowd3), top3
+    
+    # get the personal score for the system
+    personal_score = None
+    if personal_matrix is not None:
+        personal_score = row_intersections(personal_matrix, top3 + 1)
+    
+    return np.sum(crowd3), top3 + 1, personal_score
 
 # optimizes the gestalt bit depth for the given images to give the best score
 def gestalt_hyper_tuner(crowd_matrix, ppms: "list[PPMImage]", resolution=0.1):
@@ -219,7 +257,7 @@ def gestalt_hyper_tuner(crowd_matrix, ppms: "list[PPMImage]", resolution=0.1):
         iteration += 1
         if iteration % 50 == 0:
             print(f'Iteration {iteration}, testing weights {combo}, best score so far is {best}')
-        score = score_images_gestalt(ppms, crowd_matrix, combo)
+        score = score_images_gestalt(ppms, crowd_matrix, combo)[0]
         if score > best:
             best = score
             best_weights = combo
@@ -227,3 +265,13 @@ def gestalt_hyper_tuner(crowd_matrix, ppms: "list[PPMImage]", resolution=0.1):
     print(f'Best weights: {best_weights}')
     return best_weights
 
+##################
+# Misc Functions #
+##################
+
+# for each row, find the number of agreements between the top 3 images and the personal matrix
+def row_intersections(top3, personal_matrix):
+    personal_sets = [set(row) for row in personal_matrix.astype(int)]
+    matches = [len(personal_sets[i].intersection(row)) for i, row in enumerate(top3)]
+    
+    return np.sum(matches)

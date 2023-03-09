@@ -14,11 +14,15 @@ def main():
         print('using testing folder')
         global TEST
         TEST = True
-    folder = 'testing' if TEST else 'img'
+    folder = 'testing/' if TEST else 'img/'
     
     #load the crowd matrix
     crowd_matrix = np.loadtxt('Crowd.txt')
-
+    sparse_matrix = np.loadtxt('Sparse.txt')
+    personal_matrix = np.loadtxt('MyPreferences.txt')
+    #delete leftmost column from personal matrix
+    personal_matrix = np.delete(personal_matrix, 0, 1)
+    
     # get all the ppm files in the desired folder
     print("Finding images...", end="")
     files = [f for f in os.listdir('img') if f.endswith('.ppm')]
@@ -35,7 +39,7 @@ def main():
         # these are precomputed hyper parameters for the best gestalt score
         ppms.append(PPMImage(folder + f, (1, 3, 2), 9, 79, 149))
     print("\ndone")
-    
+        
     # ======================  Note  ====================== #
     
     # these are all commented out because they are time consuming to run
@@ -52,8 +56,9 @@ def main():
     # found to be (1, 3, 2) with score 11321.0 #
     ############################################
 
-    # # get the best score and system selections
-    # score, selections = score_images_color(ppms, crowd_matrix)
+    # get the best score and system selections
+    # score, selections, personal_score = score_images_color(ppms, crowd_matrix, personal_matrix)
+
 
     # ====================== Step 2 ====================== #
 
@@ -66,7 +71,7 @@ def main():
     ######################################
     
     # # get the best score and system selections
-    # score, selections = score_images_texture(ppms, crowd_matrix)
+    # score, selections, personal_score = score_images_texture(ppms, crowd_matrix, personal_matrix)
 
     # ====================== Step 3 ====================== #
 
@@ -79,7 +84,7 @@ def main():
     #####################################
     
     # # get the best score and system selections
-    # score, selections = score_images_shape(ppms, crowd_matrix)
+    # score, selections, personal_score = score_images_shape(ppms, crowd_matrix, personal_matrix)
 
     # ====================== Step 4 ====================== #
     
@@ -92,7 +97,7 @@ def main():
     ######################################
     
     # # get the best score and system selections
-    # score, matrix = score_images_symmetry(ppms, crowd_matrix)
+    # score, selections, personal_score = score_images_symmetry(ppms, crowd_matrix, personal_matrix)
     
     # ====================== Step 5 ====================== #
     
@@ -109,7 +114,42 @@ def main():
     # at resolution 0.01, the best weights are [.35, 0.22, 0.43, 0.0] at 12600   #
     ##############################################################################
     
-    #score, selections = score_images_gestalt(ppms, crowd_matrix, [0.35, 0.22, 0.43, 0.0])
+    #score, selections, personal_score = score_images_gestalt(ppms, crowd_matrix, [0.35, 0.22, 0.43, 0.0], personal_matrix)
+    
+    # ============ Testing Personal Happiness ============= #
+
+    # # test the personal score, since it was added last
+    # _, _, personal_score_color = score_images_color(ppms, crowd_matrix, personal_matrix)
+    # _, _, personal_score_texture = score_images_texture(ppms, crowd_matrix, personal_matrix)
+    # _, _, personal_score_shape = score_images_shape(ppms, crowd_matrix, personal_matrix)
+    # _, _, personal_score_symmetry = score_images_symmetry(ppms, crowd_matrix, personal_matrix)
+    # score, _, personal_score_gestalt = score_images_gestalt(ppms, crowd_matrix, [0.35, 0.22, 0.43, 0.0], personal_matrix)
+    
+    # print(f'personal score color: {personal_score_color}')
+    # print(f'personal score texture: {personal_score_texture}')
+    # print(f'personal score shape: {personal_score_shape}')
+    # print(f'personal score symmetry: {personal_score_symmetry}')
+    # print(f'personal score gestalt: {personal_score_gestalt}')
+    # # ensure the gestalt score is unchanged from above
+    # print(f'gestalt score: {score}')
+    
+    # ======================  Step 6 ====================== #
+    
+    # # essentially redo step 5 but using sparse_matrix instead of crowd_matrix
+    # # tune the weight on the sparse matrix so they match my preferences
+    # best_weights = gestalt_hyper_tuner(sparse_matrix, ppms, resolution=0.05)
+    # # check the new personal score
+    
+    #######################################################################
+    # tuning on personal sparse matrix with resolution 0.05               #
+    # gives best weights = [0.1, 0.15, 0.75, 0.0] with score 125 (52.08%) #
+    # no time for 0.01 but likely a little better                         #
+    #######################################################################
+    
+    # _, _, personal_score_gestalt = score_images_gestalt(ppms, crowd_matrix,[0.4, 0.2, 0.4, 0.0], personal_matrix)
+    # score, _, _ = score_images_gestalt(ppms, sparse_matrix, [0.1, 0.15, 0.75, 0.0], personal_matrix)
+    # print(f'old personal score: {personal_score_gestalt} out of 120 ({personal_score_gestalt / 120 * 100}%)')
+    # print(f'new personal score: {score} out of 240 ({score / 240 * 100}%)')
     
 if __name__ == '__main__':
     main()
