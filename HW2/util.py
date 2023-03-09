@@ -34,7 +34,8 @@ def distance_shape(img1: PPMImage, img2: PPMImage):
 
     #xor causes 1 to be returned if the pixels are different, so summing the result gives the number of different pixels
     #then you just have to normalize by the number of pixels compared
-    return np.sum(np.logical_xor(img1.binary_for_shape, img2.binary_for_shape)).astype(np.float32) / (img1.original_image.shape[0] * img1.original_image.shape[1] * 2.0)
+    pixel_count = img1.original_image.shape[0] * img1.original_image.shape[1]
+    return np.sum(np.logical_xor(img1.binary_for_shape, img2.binary_for_shape)).astype(np.float32) / pixel_count
 
 #get the symmetry score of an image
 def distance_symmetry(img: PPMImage):
