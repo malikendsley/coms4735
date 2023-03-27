@@ -27,6 +27,7 @@ def print_stats(buildings: dict):
         print("MBR Bottom Right Coordinates", buildings[key].MBR[2], buildings[key].MBR[3])
         print("COM Coordinates:", buildings[key].COM)
         print("Pixel Area:", buildings[key].area)
+        print("MBR Diagonal Length:", buildings[key].diag)
         print("Intersections:", end=" ")
         building_intersections = intersections(buildings[key], buildings.values())
         # print each building_intersection.name

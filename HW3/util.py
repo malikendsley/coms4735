@@ -30,7 +30,9 @@ def intersections(building, list):
             continue
         if b.area == 0:
             continue
-        if building.MBR[1] >= b.MBR[3] or building.MBR[3] <= b.MBR[1] or building.MBR[0] >= b.MBR[2] or building.MBR[2] <= b.MBR[0]:
+        #MBR 0 = x1, 1 = y1, 2 = x2, 3 = y2
+        #MBR is upper left and lower right
+        if building.MBR[0] > b.MBR[2] or building.MBR[2] < b.MBR[0] or building.MBR[1] < b.MBR[3] or building.MBR[3] > b.MBR[1]:
             continue
         else:
             intersections.append(b)
