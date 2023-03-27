@@ -1,10 +1,12 @@
 
 import os
 from typing import List
+from matplotlib import pyplot as plt
 import numpy as np
 from image import PPMImage
 from util import *
 import sys
+from PIL import Image, ImageDraw, ImageFont
 
 TEST = False
 
@@ -151,5 +153,83 @@ def main():
     # print(f'old personal score: {personal_score_gestalt} out of 120 ({personal_score_gestalt / 120 * 100}%)')
     # print(f'new personal score: {score} out of 240 ({score / 240 * 100}%)')
     
+    # ======================  Visualization ====================== #
+    # #for all ppms exchange RGB to BGR
+    font = ImageFont.truetype('arial.ttf', size=16)
+    for ppm in ppms:
+        ppm.original_image = ppm.original_image[:, :, ::-1]
+    def visualize_images(ppms, crowd_matrix, personal_matrix, score_function):
+    #get the score, selections, and personal score
+        if score_function.__name__ == 'score_images_gestalt':
+            score, selections, p_score = score_function(ppms, crowd_matrix, [0.46, 0.28, 0.24, 0.02], personal_matrix)
+        else:
+            score, selections, p_score = score_function(ppms, crowd_matrix, personal_matrix)
+
+        #initialize an image in PIL
+        image = Image.new('RGB', (850, 56 * len(ppms)))
+        #annotate the top of the picture with the total score and the personal score
+        draw = ImageDraw.Draw(image)
+        draw.text((0, 0), f'total: {int(score)} out of 18021 ({score / 18021.0 * 100:.2f}%)', font=font)
+        draw.text((600, 0), f'happiness: {p_score} out of {len(ppms) * 3} ({p_score / (len(ppms) * 3) * 100:.2f}%)', font=font)
+        #put "scoring_function - based selections" at the top of the image
+        draw.text((300, 0), f'{score_function.__name__} - based selections', (255, 255, 255))
+        #for each row in the selection matrix
+        for i, row in enumerate(selections):
+            #id is the query image number
+            q = ppms[i]
+            t1 = ppms[row[0] - 1]
+            t2 = ppms[row[1] - 1]
+            t3 = ppms[row[2] - 1]
+            t1_score = crowd_matrix[i][row[0] - 1].astype(int)
+            t2_score = crowd_matrix[i][row[1] - 1].astype(int)
+            t3_score = crowd_matrix[i][row[2] - 1].astype(int)
+            rowscore = int(t1_score + t2_score + t3_score)
+            #draw the query image, t1, t2, and t3 images in a row, use 4-item boxes
+            #convert q.original_image to a PIL image
+            q = Image.fromarray(q.original_image)
+            t1 = Image.fromarray(t1.original_image)
+            t2 = Image.fromarray(t2.original_image)
+            t3 = Image.fromarray(t3.original_image)
+
+            #draw the images in two columns, 20 rows each
+            if i < len(ppms) / 2:
+                image.paste(q , (0, 110 * i + 40))
+                image.paste(t1, (100, 110 * i + 40 ))
+                image.paste(t2, (200, 110 * i + 40 ))
+                image.paste(t3, (300, 110 * i + 40 ))
+            else:
+                image.paste(q , (450, 110 * (i%20) + 40))
+                image.paste(t1, (550, 110 * (i%20) + 40 ))
+                image.paste(t2, (650, 110 * (i%20) + 40 ))
+                image.paste(t3, (750, 110 * (i%20 )+ 40 ))
+            
+            #underneath each image, draw the individual scores
+            draw = ImageDraw.Draw(image)
+
+            if i < len(ppms) / 2:
+                #label each image with the query image number underneath the image
+                # use a larger font size
+                draw.text((0, 110 * i + 100), f'q{i + 1} = {rowscore}', font=font)
+                draw.text((100, 110 * i + 100), f't{row[0]} = {t1_score}', font=font)
+                draw.text((200, 110 * i + 100), f't{row[1]} = {t2_score}', font=font)
+                draw.text((300, 110 * i + 100), f't{row[2]} = {t3_score}', font=font)
+            else:
+                draw.text((450, 110 * (i%20) + 100), f'q{i + 1} = {rowscore}', font=font)
+                draw.text((550, 110 * (i%20) + 100), f't{row[0]} = {t1_score}', font=font)
+                draw.text((650, 110 * (i%20) + 100), f't{row[1]} = {t2_score}', font=font)
+                draw.text((750, 110 * (i%20) + 100), f't{row[2]} = {t3_score}', font=font)
+
+        # show the image currently being worked on
+        #image.show()
+        # save the image using the name of the scoring function
+        image.save(f'{score_function.__name__}.png')
+        # annotate the bottom with the total score and the personal score
+
+    visualize_images(ppms, crowd_matrix, personal_matrix, score_images_color)
+    visualize_images(ppms, crowd_matrix, personal_matrix, score_images_texture)
+    visualize_images(ppms, crowd_matrix, personal_matrix, score_images_shape)
+    visualize_images(ppms, crowd_matrix, personal_matrix, score_images_symmetry)
+    visualize_images(ppms, crowd_matrix, personal_matrix, score_images_gestalt)
+
 if __name__ == '__main__':
     main()

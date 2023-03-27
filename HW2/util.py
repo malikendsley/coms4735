@@ -63,7 +63,6 @@ def distance_gestalt(img1: PPMImage, img2: PPMImage, weights: "list[float]"):
     distances[1] = (distance_texture(img1, img2))
     distances[2] = (distance_shape(img1, img2))
     distances[3] = (np.abs(distance_symmetry(img1) - distance_symmetry(img2)))
-    
     #multiply each weight by the corresponding distance
     distances = np.dot(distances, weights)
     

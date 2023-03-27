@@ -7,26 +7,26 @@ laplace_matrix = np.array([[1, 1, 1], [1, -8, 1], [1, 1, 1]])
 # class for handling images, precomputes a lot of useful information
 class PPMImage:
     # takes a filename, and all of the hyper parameters (includes defaults)
-    def __init__(self, filename: str, color_depth = (8,8,8), laplace_depth = 11, binary_threshold = 128, binary_symmetry_threshold = 128):
+    def __init__(self, filename: str, color_depth = (8,8,8), lap_depth = 11, bin_thresh = 128, sym_thresh = 128):
         # basic information and the actual image
         self.filename = filename
         self.bit_depths = color_depth
-        self.laplace_depth = laplace_depth
+        self.laplace_depth = lap_depth
         self.original_image = cv2.imread(filename)
         
         # create versions of image
         self.color = self.init_color(self.original_image, color_depth)
         self.grayscale = self.init_grayscale(self.original_image)
-        self.texture = self.init_texture(self.grayscale, laplace_depth)
-        self.binary_for_shape = self.init_binary(self.grayscale, binary_threshold)
-        self.binary_for_symmetry = self.init_binary(self.grayscale, binary_symmetry_threshold)
+        self.texture = self.init_texture(self.grayscale, lap_depth)
+        self.binary_for_shape = self.init_binary(self.grayscale, bin_thresh)
+        self.binary_for_symmetry = self.init_binary(self.grayscale, sym_thresh)
         
         # make the color histogram for the image
         bins = [np.linspace(0, 2**color_depth[i], 2**color_depth[i] + 1) for i in range(3)]
         self.color_histogram, _ =  np.histogramdd(self.color.reshape(-1, 3), bins=bins)
     
         # make the texture histogram for the image
-        bins = np.linspace(0, 2**laplace_depth, 2**laplace_depth + 1)
+        bins = np.linspace(0, 2**lap_depth, 2**lap_depth + 1)
         self.texture_histogram, _ = np.histogram(self.texture.reshape(-1), bins=bins)
     
     #############################

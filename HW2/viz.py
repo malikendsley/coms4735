@@ -20,9 +20,11 @@ personal_matrix = np.loadtxt('MyPreferences.txt')
 #delete leftmost column from personal matrix
 personal_matrix = np.delete(personal_matrix, 0, 1)
 
-def visualize_color_step(ppms, crowd_matrix, personal_matrix):
+def visualize_color_step(ppms, crowd_matrix, personal_matrix, scoring_function: function):
     #get the score, selections, and personal score
-    score, selections, personal_score = score_images_color(ppms, crowd_matrix, personal_matrix)
+    score, selections, personal_score = scoring_function(ppms, crowd_matrix, personal_matrix)
+
+
     #for each row in the selection matrix
     for i, row in enumerate(selections):
         #id is the query image number
@@ -36,4 +38,5 @@ def visualize_color_step(ppms, crowd_matrix, personal_matrix):
         rowscore = t1_score + t2_score + t3_score
         #TODO display the images, with the labels individual scores underneath and the row score out to the side
     # annotate the bottom with the total score and the personal score
-        
+
+visualize_color_step(ppms, crowd_matrix, personal_matrix, score_images_color)
