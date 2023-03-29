@@ -32,8 +32,53 @@ def intersections(building, list):
             continue
         #MBR 0 = x1, 1 = y1, 2 = x2, 3 = y2
         #MBR is upper left and lower right
-        if building.MBR[0] > b.MBR[2] or building.MBR[2] < b.MBR[0] or building.MBR[1] < b.MBR[3] or building.MBR[3] > b.MBR[1]:
+        if building.MBR[0] >= b.MBR[2] or building.MBR[2] <= b.MBR[0] or building.MBR[1] <= b.MBR[3] or building.MBR[3] >= b.MBR[1]:
             continue
         else:
             intersections.append(b)
     return intersections
+
+# given a list of buildings, calibrate the size, aspect ratio, and shape descriptors
+def calibrate_what(buildings:dict):
+    #make dict into list
+    buildings_list = list(buildings.values())
+    calibration_data = {}
+    # calculate the average size of all buildings
+    average = 0
+    for b in buildings_list:
+        average += b.area
+    average /= len(buildings_list)
+    smallest = sorted(buildings_list, key=lambda b: b.area)[0].area
+    largest = sorted(buildings_list, key=lambda b: b.area)[-1].area
+
+    # the smallest building defined by the smallest building, but also buildings within 10% of the smallest building
+    # since they are likely to be the confused with the smallest building
+    # the largest and smallest groups are based on the largest and smallest buildings, then padded by 10%
+    # the middle group is based on the average size of the buildings, then padded by 20%
+    # the other two groups are based on the region left over after the first three groups are calculated
+    smallest *= 1.1
+    largest *= 0.9
+
+    medium_lower_cutoff = average * 0.8
+    medium_upper_cutoff = average * 1.2
+
+    # ensure the intervals do not overlap
+    if smallest > medium_lower_cutoff:
+        print("Error: smallest and medium_lower_cutoff overlap")
+        return  
+    if medium_lower_cutoff > medium_upper_cutoff:
+        print("Error: medium_lower_cutoff and medium_upper_cutoff overlap")
+        return
+    if medium_upper_cutoff > largest:
+        print("Error: medium_upper_cutoff and largest overlap")
+        return
+    calibration_data["size"] = {}
+    calibration_data["size"]["smallest"] = (0, smallest)
+    calibration_data["size"]["small"] = (smallest + 1, medium_lower_cutoff)
+    calibration_data["size"]["medium"] = (medium_lower_cutoff + 1, medium_upper_cutoff)
+    calibration_data["size"]["large"] = (medium_upper_cutoff + 1, largest)
+    calibration_data["size"]["largest"] = (largest, 1000000)
+    # split the buildings into 5 groups based on size
+    return calibration_data
+
+    
