@@ -15,8 +15,10 @@ def main():
             if img[y, x] != 0 and img[y, x] not in buildings:
                 buildings[img[y, x]] = Building(img[y, x], img)
     
-    # print_stats(buildings)
+    print_stats(buildings)
     print_calibration(buildings)
+    
+    
 def print_stats(buildings: dict):
     # iterate through all objects in the dictionary
     for key in buildings:
@@ -40,13 +42,19 @@ def print_stats(buildings: dict):
 
 def print_calibration(buildings: dict):
     calibration_data = calibrate_what(buildings)
-    print("Data ", calibration_data)
+    print("=========================================")
+    print("===========Calibration Data==============")
     #print the calibration data for all 3 whats
     #they are inside calibration_data object under size, aspect ratio, and geometry
     print("=========================================")
+    print("------------ Size -------------------")
     size_data = calibration_data["size"]
     #print each category next to its interval
     for category in size_data:
         print(category, size_data[category])
+    print("------------ Aspect Ratio ---------------")
+    aspect_data = calibration_data["aspect"]
+    for category in aspect_data:
+        print(category, aspect_data[category])
 if __name__ == "__main__":
     main()

@@ -13,6 +13,13 @@ class Building:
         self.area = 0
         self.diag = 0.0
         self.MBR, self.COM, self.area, self.diag = self.calc_stats(img)
+        MBR_height = self.MBR[1] - self.MBR[3]
+        MBR_width = self.MBR[2] - self.MBR[0]
+        # divide the smaller dimension by the larger dimension to get the aspect ratio
+        if MBR_height > MBR_width:
+            self.aspect = MBR_height / MBR_width
+        else:
+            self.aspect = MBR_width / MBR_height
 
     def calc_stats(self, img: cv.Mat)-> Tuple[Tuple[float, float, float, float], Tuple[float, float], int]:
         area = 0

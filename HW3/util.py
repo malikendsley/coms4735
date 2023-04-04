@@ -72,13 +72,57 @@ def calibrate_what(buildings:dict):
     if medium_upper_cutoff > largest:
         print("Error: medium_upper_cutoff and largest overlap")
         return
+    
+    # split the buildings into 5 groups based on size
     calibration_data["size"] = {}
     calibration_data["size"]["smallest"] = (0, smallest)
     calibration_data["size"]["small"] = (smallest + 1, medium_lower_cutoff)
     calibration_data["size"]["medium"] = (medium_lower_cutoff + 1, medium_upper_cutoff)
     calibration_data["size"]["large"] = (medium_upper_cutoff + 1, largest)
     calibration_data["size"]["largest"] = (largest, 1000000)
-    # split the buildings into 5 groups based on size
+    
+    
+    
+    #aspect is given by ratio of MBR width to MBR height, ranging from 0 to 1
+    # the categories are "narrow", "medium-wide", and "wide"
+    # narrow is near a value of 0, medium-wide is near a value of 0.5, and wide is near a value of 1
+    average_aspect = 0
+    
+    for b in buildings_list:
+        average_aspect += b.aspect
+        
+    average_aspect /= len(buildings_list)
+    # print("average aspect", average_aspect)
+    # min_aspect = sorted(buildings_list, key=lambda b: (b.MBR[2] - b.MBR[0]) / (b.MBR[1] - b.MBR[3]))[0].area
+    # max_aspect = sorted(buildings_list, key=lambda b: (b.MBR[2] - b.MBR[0]) / (b.MBR[1] - b.MBR[3]))[-1].area
+    
+    calibration_data["aspect"] = {}
+    calibration_data["aspect"]["narrow"] = (0, average_aspect * 0.8)
+    calibration_data["aspect"]["medium-wide"] = (average_aspect * 0.8, average_aspect * 1.2)
+    calibration_data["aspect"]["wide"] = (average_aspect * 1.2, 1)
+    
     return calibration_data
 
+    # decide the shape of the building from among the categories
+    # square, rectangular, I-shaped, C-shaped, L-shaped, asymmetric
+    # square is a building with an aspect ratio near 1, and whose bounding box leaves few gaps
+    # rectangular is a building with an aspect ratio less than .8 and the bounding box leaves few gaps 
+    # if the bounding box leaves gaps, then check for the below shapes
+    # an L shaped building becomes rectangular when folded along the diagonal
+    # a C shaped building becomes L shaped when folded in half
+    # an I shaped building becomes C shaped when folded in half parallel to the longer side
+    # asymmetric is a building that does not fit into any of the other categories
+    # so, test for square, then rectangular, then L, then C, then I so that the most specific shape is chosen
+    def decide_shape(building):
+        pass
+    def isSquare(building):
+        pass
+    def isRectangular(building):
+        pass
+    def isLShaped(building):
+        pass
+    def isCShaped(building):
+        pass
+    def isIShaped(building):
+        pass
     
