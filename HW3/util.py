@@ -1,6 +1,8 @@
 #read the Table.txt file to generate the lookup table for integer to string conversion
 
 #dict named lookup
+import cv2
+
 table = {}
 r_table = {}
 #open Table.txt file
@@ -113,16 +115,25 @@ def calibrate_what(buildings:dict):
     # an I shaped building becomes C shaped when folded in half parallel to the longer side
     # asymmetric is a building that does not fit into any of the other categories
     # so, test for square, then rectangular, then L, then C, then I so that the most specific shape is chosen
-    def decide_shape(building):
+def decide_shape(building):
+    pass
+def isSquare(building):
+    #approximate a 4 line bounding box for the building
+    if building.aspect > 0.9:
         pass
-    def isSquare(building):
-        pass
-    def isRectangular(building):
-        pass
-    def isLShaped(building):
-        pass
-    def isCShaped(building):
-        pass
-    def isIShaped(building):
-        pass
+def isRectangular(building):
+    pass
+def isLShaped(building):
+    pass
+def isCShaped(building):
+    pass
+def isIShaped(building):
+    pass
+
+
+
+def approx_box(building):
+    # get the minimum are rectangle that contains the building
+    pass
+
     

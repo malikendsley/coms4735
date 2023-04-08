@@ -17,7 +17,9 @@ def main():
     
     print_stats(buildings)
     print_calibration(buildings)
-    
+    for key in buildings:
+        #approx_box each image
+        approx_box(buildings[key])
     
 def print_stats(buildings: dict):
     # iterate through all objects in the dictionary
