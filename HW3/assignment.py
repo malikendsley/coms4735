@@ -1,6 +1,6 @@
 
 import cv2 as cv
-from building import Building
+from building import Building, id_2_name, name_2_id
 from util import *
 
 def main():
@@ -17,9 +17,34 @@ def main():
     
     print_stats(buildings)
     print_calibration(buildings)
+    
+    calibration_data = calibrate_what(buildings)
+    
+    master = cv.imread("Labeled.pgm", -1)
+    # cv2.imshow("Master", master)
     for key in buildings:
-        #approx_box each image
-        approx_box(buildings[key])
+        building = buildings[key]
+        # to each building attach a tuple of the 3 what properties
+        building.traits = (decide_size(building, calibration_data), decide_aspect_ratio(building, calibration_data), decide_shape(building))
+    for key in buildings:
+        print(f'"What" properties for {buildings[key].name}:')
+        print(f'Size: {buildings[key].traits[0]}')
+        print(f'Aspect Ratio: {buildings[key].traits[1]}')
+        print(f'Shape: {buildings[key].traits[2]}')
+        # get a list of all the other buildings with the same trait tuple
+        confused = []
+        for key2 in buildings:
+            if key != key2 and buildings[key].traits == buildings[key2].traits:
+                confused.append(buildings[key2].name)
+        print(f'Confusion: {confused if len(confused) > 0 else "None"}')
+        print(f'')
+   
+############################################### #
+#                                               #
+#              Extra Functions                  #
+#                                               #
+############################################### #
+    
     
 def print_stats(buildings: dict):
     # iterate through all objects in the dictionary
@@ -28,16 +53,24 @@ def print_stats(buildings: dict):
         # print the stats for each building
         # round everything to 2 decimal places
         print("Building", id_2_name(key), "has the following stats:")
+        print(f"Raw MBR Coordinates: {buildings[key].MBR}")
         print(f'MBR Top Left Coordinates: {buildings[key].MBR[0]:.2f}, {buildings[key].MBR[1]:.2f}')
         print(f'MBR Bottom Right Coordinates: {buildings[key].MBR[2]:.2f}, {buildings[key].MBR[3]:.2f}')
         print(f'Center of Mass Coordinates: {buildings[key].COM[0]:.2f}, {buildings[key].COM[1]:.2f}')
         print(f'Pixel Area: {buildings[key].area}')
         print(f'Diagonal Length: {buildings[key].diag:.2f}')
+        print(f'Occupied Ratio: {buildings[key].occupied_ratio:.2f}')
         print("Intersections:", end=" ")
+        print(f"Aspect Ratio: {buildings[key].aspect:.2f}")
+
+        # cv.circle(image, (int(buildings[key].MBR[0]), int(buildings[key].MBR[1])), 5, (255, 0, 0), -2)
+        # cv.circle(image, (int(buildings[key].MBR[2]), int(buildings[key].MBR[3])), 5, (0, 0, 255), -2)
+        # cv.imshow("MBR", image)
+        # cv.waitKey(0)
         building_intersections = intersections(buildings[key], buildings.values())
         # print each building_intersection.name
         if len(building_intersections) == 0:
-            print("None")
+            print("None\n")
         else:
             print(*[building.name for building in building_intersections], sep=", ")
 

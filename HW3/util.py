@@ -2,9 +2,15 @@
 
 #dict named lookup
 import cv2
+import numpy as np
 
 table = {}
 r_table = {}
+
+original_image = cv2.imread('Labeled.pgm')
+# convert to grayscale
+original_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2GRAY)
+
 #open Table.txt file
 #each line in the file is read and split into two parts
 #the first part is a number and the second part is a string
@@ -94,9 +100,6 @@ def calibrate_what(buildings:dict):
         average_aspect += b.aspect
         
     average_aspect /= len(buildings_list)
-    # print("average aspect", average_aspect)
-    # min_aspect = sorted(buildings_list, key=lambda b: (b.MBR[2] - b.MBR[0]) / (b.MBR[1] - b.MBR[3]))[0].area
-    # max_aspect = sorted(buildings_list, key=lambda b: (b.MBR[2] - b.MBR[0]) / (b.MBR[1] - b.MBR[3]))[-1].area
     
     calibration_data["aspect"] = {}
     calibration_data["aspect"]["narrow"] = (0, average_aspect * 0.8)
@@ -105,35 +108,317 @@ def calibrate_what(buildings:dict):
     
     return calibration_data
 
-    # decide the shape of the building from among the categories
-    # square, rectangular, I-shaped, C-shaped, L-shaped, asymmetric
-    # square is a building with an aspect ratio near 1, and whose bounding box leaves few gaps
-    # rectangular is a building with an aspect ratio less than .8 and the bounding box leaves few gaps 
-    # if the bounding box leaves gaps, then check for the below shapes
-    # an L shaped building becomes rectangular when folded along the diagonal
-    # a C shaped building becomes L shaped when folded in half
-    # an I shaped building becomes C shaped when folded in half parallel to the longer side
-    # asymmetric is a building that does not fit into any of the other categories
-    # so, test for square, then rectangular, then L, then C, then I so that the most specific shape is chosen
+###############################
+#                             #
+#   Shape Detection Functions #
+#                             #
+###############################
+
 def decide_shape(building):
-    pass
+    # print(f"===============Deciding shape for building {building.name}===============")
+    #cv2.imshow("building", building.img)
+    # cv2.waitKey(0)
+    if isIShaped(building):
+        return "I-shaped"
+    elif isSquare(building):
+        return "square"
+    elif isRectangular(building):
+        return "rectangular"
+    elif isLShaped(building):
+        return "L-shaped"
+    elif isCShaped(building):
+        return "C-shaped"
+    else:
+        # print ("Building is asymmetric")
+        return "asymmetric"
+
 def isSquare(building):
     #approximate a 4 line bounding box for the building
-    if building.aspect > 0.9:
-        pass
+    if building.aspect > 0.9 and building.occupied_ratio > 0.8:
+        # print(f"Buidling is square, aspect ratio {building.aspect}, occupied ratio {building.occupied_ratio}")
+        return True
+    # print("Building is not square")
+    return False
+
 def isRectangular(building):
-    pass
+    if building.occupied_ratio > 0.8:
+        # print(f"Buidling is rectangular, occupied ratio {building.occupied_ratio}")
+        return True
+    # print("Building is not rectangular")
+    return False
+
 def isLShaped(building):
-    pass
-def isCShaped(building):
-    pass
-def isIShaped(building):
-    pass
-
-
-
-def approx_box(building):
-    # get the minimum are rectangle that contains the building
-    pass
-
+    # folding the building along the diagonal should make it rectangular
+    # if not, it's a more complex shape
+    # begin by aligning the origin to the MBR's top left corner
+    slice = building.img[building.MBR[1]:building.MBR[3], building.MBR[0]:building.MBR[2]]
+    offsetX = building.MBR[0]
+    offsetY = building.MBR[1]
+    newCOMX, newCOMY = building.COM[0] - offsetX, building.COM[1] - offsetY
+    newCOMX = round(newCOMX)
+    newCOMY = round(newCOMY)
+    # print(f"new shape: {slice.shape}")
+    # print(f"newCOMX: {newCOMX}, newCOMY: {newCOMY}")
+    # img = slice.copy()
+    # img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+    # scale up by 4x, no anti aliasing
+    # then, find out which diagonal to fold along
+    # the diagonal should be from the corner closest to the COM to the opposite corner
+    # true is bottom left to top right, false is top left to bottom right
+    foldDirRising = None
+    # if the COM is in the top left, fold along the bottom right diagonal
+    if newCOMX < slice.shape[1] / 2 and newCOMY < slice.shape[0] / 2:
+        foldDirRising = True
+    # if the COM is in the top right, fold along the bottom left diagonal
+    elif newCOMX > slice.shape[1] / 2 and newCOMY < slice.shape[0] / 2:
+        foldDirRising = False
+    # if the COM is in the bottom left, fold along the top right diagonal
+    elif newCOMX < slice.shape[1] / 2 and newCOMY > slice.shape[0] / 2:
+        foldDirRising = False
+    # if the COM is in the bottom right, fold along the top left diagonal
+    elif newCOMX > slice.shape[1] / 2 and newCOMY > slice.shape[0] / 2:
+        foldDirRising = True
+    else:
+        print("odd...")
+    # cv2.circle(img, (newCOMX, newCOMY), 5, (0, 0, 255), -1)
+    # if foldDirRising:
+    #     cv2.line(img, (0, 0), (slice.shape[1], slice.shape[0]), (0, 255, 0), 1)
+    # else:
+    #     cv2.line(img, (0, slice.shape[0]), (slice.shape[1], 0), (0, 255, 0), 1)
+    # cv2.imshow("building2", img)
+    # cv2.waitKey(0)
+    # "fold" the building by checking each pixel with its mirror image (swap x and y)
+    flipped = None
+    if foldDirRising:
+        flipped = np.transpose(slice)
+    else:
+        flipped = np.flipud(np.transpose(slice))
     
+    destination = np.zeros(slice.shape, dtype=np.uint8)
+    # for an x y flip to avoid overflow, only flip up to the smaller of the two dimensions
+    cap = min(slice.shape[0], slice.shape[1])
+    # if either flipped or the original contains a pixel, put it in the destination
+    # only check above the diagonal
+    for i in range(cap):
+        for j in range(i):
+            if flipped[i][j] > 0 or slice[i][j] > 0:
+                destination[i][j] = 255
+    
+    # cv2.imshow("building2", destination)
+    # if you are left with a rectangle you most likely started with an L-shaped building
+    # check the rectangularness by checking the density and the aspect ratio
+    MBRx1, MBRy1, MBRx2, MBRy2 = 0, 0, 0, 0
+    area = 0
+    for i in range(destination.shape[0]):
+        for j in range(destination.shape[1]):
+            if destination[i][j] > 0:
+                area += 1
+                if i < MBRy1:
+                    MBRy1 = i
+                if i > MBRy2:
+                    MBRy2 = i
+                if j < MBRx1:
+                    MBRx1 = j
+                if j > MBRx2:
+                    MBRx2 = j
+    width = MBRx2 - MBRx1 + 1
+    height = MBRy2 - MBRy1 + 1
+    occupied_ratio = area / (width * height)
+    aspect = 0
+    if width < height:
+        aspect = width / height
+    else:
+        aspect = height / width
+    # print(f"Old Occupied Ratio: {building.occupied_ratio}")
+    # print(f"New Occupied Ratio: {occupied_ratio}")
+    # print(f"Old Aspect Ratio: {building.aspect}")
+    # print(f"New Aspect Ratio: {aspect}")
+    # draw a box around this rectangle
+    img = destination.copy()
+    img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+    #cv2.rectangle(img, (MBRx1, MBRy1), (MBRx2, MBRy2), (0, 255, 0), 1)
+    #cv2.imshow("building2", img)
+    #cv2.waitKey(0)
+    
+    # if the occupied ratio goes up significantly, then the original building was L-shaped
+    if occupied_ratio > building.occupied_ratio and occupied_ratio > .75:
+        # print("Building is L-shaped")
+        return True
+    else:
+        # print("Building is not L-shaped")
+        return False
+
+def isCShaped(building):
+    # repeat the folding process, but twice
+    slice = building.img[building.MBR[1]:building.MBR[3], building.MBR[0]:building.MBR[2]]
+    offsetX = building.MBR[0]
+    offsetY = building.MBR[1]
+    newCOMX = round(building.COM[0]) - offsetX
+    newCOMY = round(building.COM[1]) - offsetY
+    newCOMX = round(newCOMX)
+    newCOMY = round(newCOMY)
+    foldDirRising = None
+    if (newCOMX < slice.shape[1] / 2 and newCOMY < slice.shape[0] / 2) or (newCOMX > slice.shape[1] / 2 and newCOMY > slice.shape[0] / 2):
+        foldDirRising = True
+    elif (newCOMX > slice.shape[1] / 2 and newCOMY < slice.shape[0] / 2) or (newCOMX < slice.shape[1] / 2 and newCOMY > slice.shape[0] / 2):
+        foldDirRising = False
+    else:
+        print("odd...")
+    flipped = None
+    if foldDirRising:
+        flipped = np.transpose(slice)
+    else:
+        flipped = np.flipud(np.transpose(slice))
+    destination = np.zeros(slice.shape, dtype=np.uint8)
+    cap = min(slice.shape[0], slice.shape[1])
+    for i in range(cap):
+        for j in range(i if foldDirRising else cap - i):
+            if flipped[i][j] > 0 or slice[i][j] > 0:
+                destination[i][j] = 255
+    # now repeat the process
+    # need to recalculate the COM, MBR, and area
+    MBRx1, MBRy1, MBRx2, MBRy2 = 0, 0, 0, 0
+    area = 0
+    COM2x, COM2y = 0, 0
+    for i in range(destination.shape[0]):
+        for j in range(destination.shape[1]):
+            if destination[i][j] > 0:
+                area += 1
+                if i < MBRy1:
+                    MBRy1 = i
+                if i > MBRy2:
+                    MBRy2 = i
+                if j < MBRx1:
+                    MBRx1 = j
+                if j > MBRx2:
+                    MBRx2 = j
+                COM2x += j
+                COM2y += i
+    COM2x /= area
+    COM2y /= area
+    # get the occupied ratio of the single fold for later, use the MBR
+    old_occupied_ratio = area / ((MBRx2 - MBRx1 + 1) * (MBRy2 - MBRy1 + 1))
+    # re slice the image
+    destination = destination[MBRy1:MBRy2, MBRx1:MBRx2]
+    # now need to handle new diagonal
+    foldDirRising = None
+    if (COM2x < destination.shape[1] / 2 and COM2y < destination.shape[0] / 2) or (COM2x > destination.shape[1] / 2 and COM2y > destination.shape[0] / 2):
+        foldDirRising = True
+    elif (COM2x > destination.shape[1] / 2 and COM2y < destination.shape[0] / 2) or (COM2x < destination.shape[1] / 2 and COM2y > destination.shape[0] / 2):
+        foldDirRising = False
+    else:
+        print("odd...")
+    flipped = None
+    if foldDirRising:
+        flipped = np.transpose(destination)
+    else:
+        flipped = np.flipud(np.transpose(destination))
+    
+    destination2 = np.zeros(destination.shape, dtype=np.uint8)
+    cap = min(destination.shape[0], destination.shape[1])
+    for i in range(cap):
+        for j in range(i if foldDirRising else cap - i):
+            if flipped[i][j] > 0 or destination[i][j] > 0:
+                destination2[i][j] = 255
+    # show the double folded image
+    # img = destination2.copy()
+    # cv2.imshow("double flipped", img)
+    # cv2.waitKey(0)
+    
+    # now get MBR of destination2 and calculate occupied ratio
+    f_MBRx1, f_MBRy1, f_MBRx2, f_MBRy2 = 0, 0, 0, 0
+    f_area = 0
+    for i in range(destination2.shape[0]):
+        for j in range(destination2.shape[1]):
+            if destination2[i][j] > 0:
+                f_area += 1
+                if i < f_MBRy1:
+                    f_MBRy1 = i
+                if i > f_MBRy2:
+                    f_MBRy2 = i
+                if j < f_MBRx1:
+                    f_MBRx1 = j
+                if j > f_MBRx2:
+                    f_MBRx2 = j
+    occupied_ratio = f_area / ((f_MBRx2 - f_MBRx1 + 1) * (f_MBRy2 - f_MBRy1 + 1))
+
+    # print("Old occupied ratio is", old_occupied_ratio)
+    # print("New occupied ratio is", occupied_ratio)
+    if occupied_ratio > old_occupied_ratio and occupied_ratio > 0.6:
+        # print("Building is C shaped")
+        return True
+    else:
+        # print("Building is not C shaped")
+        return False
+
+def isIShaped(building):
+    # an I shaped building will have empty space along the horizontal axis on the far left and far right
+    # query these areas to see if they are empty
+    # if they are, then the building is I-shaped
+    comx, comy = building.COM
+    leftSide = building.MBR[0]
+    rightSide = building.MBR[2]
+    topSide = building.MBR[1]
+    bottomSide = building.MBR[3]
+    comx = round(comx)
+    comy = round(comy)
+    img = building.img
+    topOccupied = img[topSide + 1, comx] == 0
+    bottomOccupied = img[bottomSide - 1, comx] == 0
+    leftOccupied = img[comy, leftSide + 1] == 0
+    rightOccupied = img[comy, rightSide - 1] == 0
+    # print("Value of top pixel is", original_image[topSide + 1, comx])
+    # print("Value of bottom pixel is", original_image[bottomSide - 1, comx])
+    # print("Value of left pixel is", original_image[comy, leftSide + 1])
+    # print("Value of right pixel is", original_image[comy, rightSide - 1])
+    # print(f"T({comx, topSide + 1}):{topOccupied}, B({comx, bottomSide - 1}):{bottomOccupied}, L({leftSide + 1, comy}):{leftOccupied}, R({rightSide - 1, comy}):{rightOccupied}")
+    ishaped = False
+    # left and right check
+    if leftOccupied and rightOccupied:
+        # print(f"Building is I-shaped, ({leftSide}, {comy}) and ({rightSide}, {comy}) are empty (left/right check)))")
+        ishaped = True
+    # top and bottom check
+    if topOccupied and bottomOccupied:
+        # print(f"Building is I-shaped, ({comx}, {topSide}) and ({comx}, {bottomSide}) are empty (top/bottom check))")
+        ishaped = True
+    testimg = cv2.cvtColor(building.img.copy(), cv2.COLOR_GRAY2RGB)
+    
+    cv2.circle(testimg, (leftSide, comy), 0, (0, 255, 0) if leftOccupied else (255, 0, 0), 5)
+    cv2.circle(testimg, (rightSide, comy), 0, (0, 255, 0) if rightOccupied else (255, 0, 0), 5)
+    cv2.circle(testimg, (comx, topSide), 0, (0, 255, 0) if topOccupied else (255, 0, 0), 5)
+    cv2.circle(testimg, (comx, bottomSide), 0, (0, 255, 0) if bottomOccupied else (255, 0, 0), 5)
+    # cv2.imshow("testimg", testimg)
+    # cv2.waitKey(0)
+    
+    if ishaped and building.occupied_ratio < 0.8:
+        #print("Override: Building is not I-shaped (occupied ratio too low)")
+        return False
+    # if not ishaped:
+        # print("Building is not I-shaped")
+    return ishaped
+
+def decide_size(building, calibration_data):
+    # the size data is stored under calibration_data["size"]
+    buildingsize = building.area
+    # the sizes are smallest, small, medium, large, largest
+    if buildingsize < calibration_data["size"]["smallest"]:
+        return "smallest"
+    elif buildingsize < calibration_data["size"]["small"]:
+        return "small"
+    elif buildingsize < calibration_data["size"]["medium"]:
+        return "medium"
+    elif buildingsize < calibration_data["size"]["large"]:
+        return "large"
+    else:
+        return "largest"
+    
+def decide_aspect_ratio(building, calibration_data):
+    # the aspect ratio data is stored under calibration_data["aspect"]
+    buildingaspect = building.aspect
+    # the aspect ratios are narrow, medium-wide, wide
+    if buildingaspect < calibration_data["aspect"]["narrow"]:
+        return "narrow"
+    elif buildingaspect < calibration_data["aspect"]["medium-wide"]:
+        return "medium-wide"
+    else:
+        return "wide"
