@@ -41,8 +41,8 @@ class Building:
         self.area = 0
         self.diag = 0.0
         self.MBR, self.COM, self.area, self.diag = self.calc_stats(img)
-        MBR_height = abs(self.MBR[1] - self.MBR[3]) + 1
-        MBR_width = abs(self.MBR[2] - self.MBR[0]) + 1
+        self.MBR_height = abs(self.MBR[1] - self.MBR[3]) + 1
+        self.MBR_width = abs(self.MBR[2] - self.MBR[0]) + 1
         #iterate through image, if pixel doesn't match id, set to 0
         self.img = img.copy()
         #skip this step if id is -1, its a special case
@@ -50,16 +50,19 @@ class Building:
             for x in range(self.img.shape[1]):
                 if self.img[y, x] != self.id:
                     self.img[y, x] = 0
+                else:
+                    self.img[y, x] = 255
                 
                 
         # divide the smaller dimension by the larger dimension to get the aspect ratio
-        if MBR_height > MBR_width:
-            self.aspect = MBR_width / MBR_height
+        if self.MBR_height >  self.MBR_width:
+            self.aspect =  self.MBR_width /  self.MBR_height
         else:
-            self.aspect = MBR_height / MBR_width
+            self.aspect =  self.MBR_height /  self.MBR_width
         # divide the area by the area of the MBR to get the occupied ratio
-        self.occupied_ratio = self.area / (MBR_height * MBR_width)
+        self.occupied_ratio = self.area / ( self.MBR_height *  self.MBR_width)
 
+    # step through the image, calculating all of these at the same time
     def calc_stats(self, img: cv.Mat)-> Tuple[Tuple[float, float, float, float], Tuple[float, float], int]:
         area = 0
         MBR1x, MBR1y, MBR2x, MBR2y = 0, 0, 0, 0
@@ -90,5 +93,6 @@ class Building:
                     COMy += y
         COMx /= area
         COMy /= area
+        # pythagorean theorem to get the diagonal length
         diag = ((MBR2x - MBR1x)**2 + (MBR2y - MBR1y)**2)**0.5
         return (MBR1x, MBR1y, MBR2x, MBR2y), (COMx, COMy), area, diag

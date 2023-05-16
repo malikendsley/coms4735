@@ -1,14 +1,15 @@
 #read the Table.txt file to generate the lookup table for integer to string conversion
 
 #dict named lookup
+import math
 import cv2
 import numpy as np
 
 table = {}
 r_table = {}
 
+# use this in case you need to use the original image
 original_image = cv2.imread('Labeled.pgm')
-# convert to grayscale
 original_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2GRAY)
 
 #open Table.txt file
@@ -40,7 +41,8 @@ def intersections(building, list):
             continue
         #MBR 0 = x1, 1 = y1, 2 = x2, 3 = y2
         #MBR is upper left and lower right
-        if building.MBR[0] >= b.MBR[2] or building.MBR[2] <= b.MBR[0] or building.MBR[1] <= b.MBR[3] or building.MBR[3] >= b.MBR[1]:
+        # find overlapping rectangles
+        if building.MBR[0] >= b.MBR[2] or building.MBR[2] <= b.MBR[0] or building.MBR[1] >= b.MBR[3] or building.MBR[3] <= b.MBR[1]:
             continue
         else:
             intersections.append(b)
@@ -50,7 +52,7 @@ def intersections(building, list):
 def calibrate_what(buildings:dict):
     #make dict into list
     buildings_list = list(buildings.values())
-    calibration_data = {}
+    what_calibration_data = {}
     # calculate the average size of all buildings
     average = 0
     for b in buildings_list:
@@ -82,15 +84,14 @@ def calibrate_what(buildings:dict):
         return
     
     # split the buildings into 5 groups based on size
-    calibration_data["size"] = {}
-    calibration_data["size"]["smallest"] = (0, smallest)
-    calibration_data["size"]["small"] = (smallest + 1, medium_lower_cutoff)
-    calibration_data["size"]["medium"] = (medium_lower_cutoff + 1, medium_upper_cutoff)
-    calibration_data["size"]["large"] = (medium_upper_cutoff + 1, largest)
-    calibration_data["size"]["largest"] = (largest, 1000000)
+    what_calibration_data["size"] = {}
+    what_calibration_data["size"]["smallest"] = (0, smallest)
+    what_calibration_data["size"]["small"] = (smallest + 1, medium_lower_cutoff)
+    what_calibration_data["size"]["medium"] = (medium_lower_cutoff + 1, medium_upper_cutoff)
+    what_calibration_data["size"]["large"] = (medium_upper_cutoff + 1, largest)
+    what_calibration_data["size"]["largest"] = (largest, 1000000)
     
-    
-    
+
     #aspect is given by ratio of MBR width to MBR height, ranging from 0 to 1
     # the categories are "narrow", "medium-wide", and "wide"
     # narrow is near a value of 0, medium-wide is near a value of 0.5, and wide is near a value of 1
@@ -101,12 +102,12 @@ def calibrate_what(buildings:dict):
         
     average_aspect /= len(buildings_list)
     
-    calibration_data["aspect"] = {}
-    calibration_data["aspect"]["narrow"] = (0, average_aspect * 0.8)
-    calibration_data["aspect"]["medium-wide"] = (average_aspect * 0.8, average_aspect * 1.2)
-    calibration_data["aspect"]["wide"] = (average_aspect * 1.2, 1)
+    what_calibration_data["aspect"] = {}
+    what_calibration_data["aspect"]["narrow"] = (0, average_aspect * 0.8)
+    what_calibration_data["aspect"]["medium-wide"] = (average_aspect * 0.8, average_aspect * 1.2)
+    what_calibration_data["aspect"]["wide"] = (average_aspect * 1.2, 1)
     
-    return calibration_data
+    return what_calibration_data
 
 ###############################
 #                             #
@@ -150,21 +151,13 @@ def isRectangular(building):
 def isLShaped(building):
     # folding the building along the diagonal should make it rectangular
     # if not, it's a more complex shape
-    # begin by aligning the origin to the MBR's top left corner
+    # begin by aligning the origin to the MBR's top left corner and slicing out the shape
     slice = building.img[building.MBR[1]:building.MBR[3], building.MBR[0]:building.MBR[2]]
     offsetX = building.MBR[0]
     offsetY = building.MBR[1]
     newCOMX, newCOMY = building.COM[0] - offsetX, building.COM[1] - offsetY
     newCOMX = round(newCOMX)
     newCOMY = round(newCOMY)
-    # print(f"new shape: {slice.shape}")
-    # print(f"newCOMX: {newCOMX}, newCOMY: {newCOMY}")
-    # img = slice.copy()
-    # img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
-    # scale up by 4x, no anti aliasing
-    # then, find out which diagonal to fold along
-    # the diagonal should be from the corner closest to the COM to the opposite corner
-    # true is bottom left to top right, false is top left to bottom right
     foldDirRising = None
     # if the COM is in the top left, fold along the bottom right diagonal
     if newCOMX < slice.shape[1] / 2 and newCOMY < slice.shape[0] / 2:
@@ -180,13 +173,6 @@ def isLShaped(building):
         foldDirRising = True
     else:
         print("odd...")
-    # cv2.circle(img, (newCOMX, newCOMY), 5, (0, 0, 255), -1)
-    # if foldDirRising:
-    #     cv2.line(img, (0, 0), (slice.shape[1], slice.shape[0]), (0, 255, 0), 1)
-    # else:
-    #     cv2.line(img, (0, slice.shape[0]), (slice.shape[1], 0), (0, 255, 0), 1)
-    # cv2.imshow("building2", img)
-    # cv2.waitKey(0)
     # "fold" the building by checking each pixel with its mirror image (swap x and y)
     flipped = None
     if foldDirRising:
@@ -229,17 +215,8 @@ def isLShaped(building):
         aspect = width / height
     else:
         aspect = height / width
-    # print(f"Old Occupied Ratio: {building.occupied_ratio}")
-    # print(f"New Occupied Ratio: {occupied_ratio}")
-    # print(f"Old Aspect Ratio: {building.aspect}")
-    # print(f"New Aspect Ratio: {aspect}")
-    # draw a box around this rectangle
     img = destination.copy()
     img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
-    #cv2.rectangle(img, (MBRx1, MBRy1), (MBRx2, MBRy2), (0, 255, 0), 1)
-    #cv2.imshow("building2", img)
-    #cv2.waitKey(0)
-    
     # if the occupied ratio goes up significantly, then the original building was L-shaped
     if occupied_ratio > building.occupied_ratio and occupied_ratio > .75:
         # print("Building is L-shaped")
@@ -401,13 +378,13 @@ def decide_size(building, calibration_data):
     # the size data is stored under calibration_data["size"]
     buildingsize = building.area
     # the sizes are smallest, small, medium, large, largest
-    if buildingsize < calibration_data["size"]["smallest"]:
+    if buildingsize < calibration_data["size"]["smallest"][1]:
         return "smallest"
-    elif buildingsize < calibration_data["size"]["small"]:
+    elif buildingsize < calibration_data["size"]["small"][1]:
         return "small"
-    elif buildingsize < calibration_data["size"]["medium"]:
+    elif buildingsize < calibration_data["size"]["medium"][1]:
         return "medium"
-    elif buildingsize < calibration_data["size"]["large"]:
+    elif buildingsize < calibration_data["size"]["large"][1]:
         return "large"
     else:
         return "largest"
@@ -416,9 +393,97 @@ def decide_aspect_ratio(building, calibration_data):
     # the aspect ratio data is stored under calibration_data["aspect"]
     buildingaspect = building.aspect
     # the aspect ratios are narrow, medium-wide, wide
-    if buildingaspect < calibration_data["aspect"]["narrow"]:
+    if buildingaspect < calibration_data["aspect"]["narrow"][1]:
         return "narrow"
-    elif buildingaspect < calibration_data["aspect"]["medium-wide"]:
+    elif buildingaspect < calibration_data["aspect"]["medium-wide"][1]:
         return "medium-wide"
     else:
         return "wide"
+    
+
+def calibrate_where(buildings):
+    # make dict into list
+    buildings = list(buildings.values())
+    where_calibration_data = {}
+    
+    # vertical ================================================================
+    
+    # the categories are 
+    # uppermost, upper, mid-height, lower, lowermost
+    # these values have been chosen to gruop the campus evenly based on low library
+    mid_height_y = 221.5
+    where_calibration_data["vertical"] = {}
+    where_calibration_data["vertical"]["uppermost"] = [0, 60]
+    where_calibration_data["vertical"]["upper"] = [61, round(mid_height_y * 0.9) - 1]
+    where_calibration_data["vertical"]["mid-height"] = [round(mid_height_y * 0.9), round(mid_height_y * 1.1)]
+    where_calibration_data["vertical"]["lower"] = [round(mid_height_y * 1.1) + 1, 390]
+    where_calibration_data["vertical"]["lowermost"] = [0, 500]
+    
+    
+    # horizontal ==============================================================
+    # these groupings consider left and rightmost as touching or almost touching the edge of the image
+    # then, mid-width is the middle 20% of the image to catch the central buildings
+    # left and right capture the rest of the image
+    
+    
+    mid_width_x = 135
+    where_calibration_data["horizontal"] = {}
+    where_calibration_data["horizontal"]["leftmost"] = [0, 40]
+    where_calibration_data["horizontal"]["left"] = [41, round(mid_width_x * 0.9) - 1]
+    where_calibration_data["horizontal"]["mid-width"] = [round(mid_width_x * 0.9), round(mid_width_x * 1.1)]
+    where_calibration_data["horizontal"]["right"] = [round(mid_width_x * 1.1) + 1, 235]
+    where_calibration_data["horizontal"]["rightmost"] = [0, 500]
+    
+    return where_calibration_data
+    
+def decide_vertical(building, calibration_data):
+    buildingY = building.COM[1]
+    if buildingY < calibration_data["vertical"]["uppermost"][1]:
+        return "uppermost"
+    elif buildingY < calibration_data["vertical"]["upper"][1]:
+        return "upper"
+    elif buildingY < calibration_data["vertical"]["mid-height"][1]:
+        return "mid-height"
+    elif buildingY < calibration_data["vertical"]["lower"][1]:
+        return "lower"
+    else:   
+        return "lowermost"
+    
+def decide_horizontal(building, calibration_data):
+    buildingX = building.COM[0]
+    if buildingX < calibration_data["horizontal"]["leftmost"][1]:
+        return "leftmost"
+    elif buildingX < calibration_data["horizontal"]["left"][1]:
+        return "left"
+    elif buildingX < calibration_data["horizontal"]["mid-width"][1]:
+        return "mid-width"
+    elif buildingX < calibration_data["horizontal"]["right"][1]:
+        return "right"
+    else:
+        return "rightmost"
+    
+    
+def decide_orientation(building):
+    # divide height by width, so above 1 is tall, below 1 is wide
+    # tall is vertically oriented, wide is horizontally oriented
+    ratio = building.MBR_height / building.MBR_width
+    #print(f"Building {id_2_name(building.id)} has ratio {ratio}")
+    if ratio > 1.35:
+        return "vertically-oriented"
+    if ratio < 0.65:
+        return "horizontally-oriented"
+    else:
+        return "non-oriented"
+    
+    
+# returns whether building 1 is considered near to building 2
+# the larger building 1 is, the easier it is to be considered near it
+def nearTo(building1, building2, tuning=0.5):
+    distance = math.sqrt((building1.COM[0] - building2.COM[0])**2 + (building1.COM[1] - building2.COM[1])**2)
+    a1 = building1.area
+    a2 = building2.area
+    # use the area of building 1 relative to the area of building 2 to encourage or discourage a nearto relationship
+    if a1 > tuning*a2:
+        return distance < tuning*a2
+    else:
+        return distance < tuning*a1
